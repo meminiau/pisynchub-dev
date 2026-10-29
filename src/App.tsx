@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { api } from './services/api';
-import { PiholeNode, BackupItem, ToastNotification, DashboardStats } from './types';
+import { PiholeNode, BackupItem, ToastNotification } from './types';
 import { Header } from './components/Header';
 import { KPICards } from './components/KPICards';
 import { ActivityCharts } from './components/ActivityCharts';
@@ -12,7 +12,7 @@ import { TeleporterVault } from './components/TeleporterVault';
 import { NodeSettingsDrawer } from './components/NodeSettingsDrawer';
 import { AddNodeModal } from './components/AddNodeModal';
 import { ToastContainer } from './components/Toast';
-import { ShieldAlert, Plus, Server, Layers } from 'lucide-react';
+import { ShieldAlert, Plus, Server, HardDriveDownload } from 'lucide-react';
 
 export const App: React.FC = () => {
   // Theme state
@@ -36,7 +36,8 @@ export const App: React.FC = () => {
   };
 
   // Auth state
-  const [username, setUsername] = useState<string | null>('admin');
+  const [username, setUsername] = useState<string | null>(null);
+  const [authChecking, setAuthChecking] = useState<boolean>(true);
 
   // Blocking state
   const [blockingEnabled, setBlockingEnabled] = useState(true);
@@ -72,6 +73,26 @@ export const App: React.FC = () => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
+  // Check initial Auth & Setup status
+  useEffect(() => {
+    const verifyAuth = async () => {
+      try {
+        const status = await api.getAuthStatus();
+        if (status.authenticated) {
+          setUsername(status.username || 'admin');
+        } else {
+          setUsername(null);
+        }
+      } catch {
+        // Fallback for initial local development
+        setUsername('admin');
+      } finally {
+        setAuthChecking(false);
+      }
+    };
+    verifyAuth();
+  }, []);
+
   // Data loader
   const refreshData = useCallback(async () => {
     try {
@@ -79,12 +100,12 @@ export const App: React.FC = () => {
       if (stats.blocking) {
         setBlockingEnabled(stats.blocking.enabled);
       }
-      if (stats.nodes) {
+      if (Array.isArray(stats.nodes)) {
         setNodes(stats.nodes);
       }
 
       const bData = await api.getBackups();
-      if (bData.backups) {
+      if (bData && Array.isArray(bData.backups)) {
         setBackups(bData.backups);
       }
     } catch (err) {
@@ -235,6 +256,7 @@ export const App: React.FC = () => {
         title: 'Node Added to Cluster',
         message: `Successfully connected ${nodeData.name} (${nodeData.url}).`,
       });
+      setIsAddNodeOpen(false);
       refreshData();
     } catch (err) {
       addToast({
@@ -246,7 +268,6 @@ export const App: React.FC = () => {
   };
 
   const handleRestoreBackup = async (nodeIndex: number, file: File) => {
-    const targetNode = nodes[nodeIndex];
     try {
       const res = await api.restoreBackup(nodeIndex, file.name);
       addToast({
@@ -321,7 +342,6 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] transition-colors duration-150">
-      {/* Sticky Header */}
       <Header
         theme={theme}
         onToggleTheme={handleToggleTheme}
@@ -337,9 +357,7 @@ export const App: React.FC = () => {
         }}
       />
 
-      {/* Main Content Body */}
       <main className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6">
-        {/* Paused Warning Banner */}
         {!blockingEnabled && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--accent-red)]/40 bg-[var(--accent-red-soft)] px-4 py-3 text-xs text-[var(--text-strong)] shadow-xs">
             <div className="flex items-center gap-2.5">
@@ -351,14 +369,14 @@ export const App: React.FC = () => {
             <button
               type="button"
               onClick={handleToggleBlocking}
-              className="rounded bg-[var(--accent-green)] px-3 py-1 font-bold text-white hover:opacity-90"
+              className="rounded bg-[var(--accent-green)] px-3 py-1 font-bold text-white hover:opacity-90 cursor-pointer"
             >
               Resume Blocking
             </button>
           </div>
         )}
 
-        {/* Overview Header & Scope Filter */}
+        {/* Overview Header */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold tracking-tight text-[var(--text-strong)]">
@@ -372,38 +390,39 @@ export const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Scope Selector */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-xs text-[var(--text-muted)]">Scope:</span>
-            <button
-              type="button"
-              onClick={() => setSelectedNodeFilter('ALL')}
-              className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${
-                selectedNodeFilter === 'ALL'
-                  ? 'bg-[var(--accent-blue)] text-white'
-                  : 'border border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-strong)] hover:bg-[var(--card-hover)]'
-              }`}
-            >
-              All Nodes ({nodes.length})
-            </button>
-            {nodes.map((n) => (
+          {nodes.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs text-[var(--text-muted)]">Scope:</span>
               <button
-                key={n.name}
                 type="button"
-                onClick={() => setSelectedNodeFilter(n.name)}
-                className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${
-                  selectedNodeFilter === n.name
+                onClick={() => setSelectedNodeFilter('ALL')}
+                className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer ${
+                  selectedNodeFilter === 'ALL'
                     ? 'bg-[var(--accent-blue)] text-white'
                     : 'border border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-strong)] hover:bg-[var(--card-hover)]'
                 }`}
               >
-                {n.name}
+                All Nodes ({nodes.length})
               </button>
-            ))}
-          </div>
+              {nodes.map((n) => (
+                <button
+                  key={n.name}
+                  type="button"
+                  onClick={() => setSelectedNodeFilter(n.name)}
+                  className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer ${
+                    selectedNodeFilter === n.name
+                      ? 'bg-[var(--accent-blue)] text-white'
+                      : 'border border-[var(--border)] bg-[var(--card-bg)] text-[var(--text-strong)] hover:bg-[var(--card-hover)]'
+                  }`}
+                >
+                  {n.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* 1. 4 Main Summary KPI Cards (Responsive 2x2 on mobile, 4 columns on desktop) */}
+        {/* KPI Cards */}
         <KPICards
           totalQueries={kpiTotals.totalQueries}
           blockedQueries={kpiTotals.blockedQueries}
@@ -414,19 +433,19 @@ export const App: React.FC = () => {
           activeNodesCount={activeScopedNodes.length}
         />
 
-        {/* 2. Dual 24-Hour Stacked Bar Charts */}
-        <ActivityCharts theme={theme} />
+        {/* Analytics Section (Only rendered when nodes exist) */}
+        {nodes.length > 0 ? (
+          <>
+            <ActivityCharts theme={theme} />
+            <DonutCharts theme={theme} queryTypes={aggQueryTypes} upstreams={aggUpstreams} />
+            <TopListsTables
+              totalQueries={kpiTotals.totalQueries}
+              blockedQueries={kpiTotals.blockedQueries}
+            />
+          </>
+        ) : null}
 
-        {/* 3. Donut Breakdowns (Query Types & Upstream Servers) */}
-        <DonutCharts theme={theme} queryTypes={aggQueryTypes} upstreams={aggUpstreams} />
-
-        {/* 4. 4 Aggregated Top Lists Data Tables */}
-        <TopListsTables
-          totalQueries={kpiTotals.totalQueries}
-          blockedQueries={kpiTotals.blockedQueries}
-        />
-
-        {/* 5. Scalable Multi-Node Cards */}
+        {/* Cluster Nodes Section */}
         <div
           className="rounded-lg border border-[var(--border)] p-4 shadow-sm"
           style={{ backgroundColor: 'var(--card-bg)' }}
@@ -447,46 +466,67 @@ export const App: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsAddNodeOpen(true)}
-              className="flex items-center gap-1.5 rounded-md bg-[var(--accent-green)] px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:opacity-90"
+              className="flex items-center gap-1.5 rounded-md bg-[var(--accent-green)] px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:opacity-90 cursor-pointer"
             >
               <Plus className="h-3.5 w-3.5" />
               <span>Add Node</span>
             </button>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {nodes.map((node, idx) => (
-              <NodeCard
-                key={`${node.name}-${idx}`}
-                node={node}
-                index={idx}
-                onManageNode={handleManageNode}
-                onBackupNode={handleCreateNodeBackup}
-                onDeleteNode={handleDeleteNode}
-              />
-            ))}
+          {nodes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="rounded-full bg-[var(--card-hover)] p-4 text-[var(--text-muted)] mb-3">
+                <Server className="h-8 w-8 text-[var(--accent-blue)]" />
+              </div>
+              <h3 className="text-sm font-bold text-[var(--text-strong)]">No Pi-hole Nodes Connected</h3>
+              <p className="max-w-md text-xs text-[var(--text-muted)] mt-1 mb-4">
+                Add your primary and secondary Pi-hole v6 instances to begin real-time telemetry aggregation and teleporter configuration synchronization.
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsAddNodeOpen(true)}
+                className="flex items-center gap-1.5 rounded-md bg-[var(--accent-blue)] px-4 py-2 text-xs font-semibold text-white shadow-xs hover:opacity-90 cursor-pointer"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Connect Your First Node</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {nodes.map((node, idx) => (
+                <NodeCard
+                  key={`${node.name}-${idx}`}
+                  node={node}
+                  index={idx}
+                  onManageNode={handleManageNode}
+                  onBackupNode={handleCreateNodeBackup}
+                  onDeleteNode={handleDeleteNode}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Sync & Vault Section */}
+        {nodes.length > 0 && (
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+            <TeleportSync
+              nodes={nodes}
+              onExecuteSync={handleExecuteSync}
+              syncBusy={syncBusy}
+              syncLogs={syncLogs}
+            />
+
+            <TeleporterVault
+              nodes={nodes}
+              backups={backups}
+              onCreateBackup={handleCreateNodeBackup}
+              onRestoreBackup={handleRestoreBackup}
+            />
           </div>
-        </div>
-
-        {/* 6. Selective Teleporter & Rules Sync Engine + Teleporter Vault */}
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-          <TeleportSync
-            nodes={nodes}
-            onExecuteSync={handleExecuteSync}
-            syncBusy={syncBusy}
-            syncLogs={syncLogs}
-          />
-
-          <TeleporterVault
-            nodes={nodes}
-            backups={backups}
-            onCreateBackup={handleCreateNodeBackup}
-            onRestoreBackup={handleRestoreBackup}
-          />
-        </div>
+        )}
       </main>
 
-      {/* In-App Node Config & Settings Inspector Drawer */}
       <NodeSettingsDrawer
         node={drawerNode}
         isOpen={isDrawerOpen}
@@ -500,14 +540,12 @@ export const App: React.FC = () => {
         nodeIndex={drawerNodeIndex}
       />
 
-      {/* Add Node Modal */}
       <AddNodeModal
         isOpen={isAddNodeOpen}
         onClose={() => setIsAddNodeOpen(false)}
         onAdd={handleAddNode}
       />
 
-      {/* Dynamic Toast Container */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
