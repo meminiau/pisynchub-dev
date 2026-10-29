@@ -1,0 +1,5 @@
+{
+  "name": "PiSyncHub",
+  "description": "Unified multi-node Pi-hole v6 dashboard, Teleporter archive vault, and selective rules synchronization engine.",
+  "requestFramePermissions": []
+}

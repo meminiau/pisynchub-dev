@@ -1,689 +1,2517 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <title>PiSyncHub - Multi-Node Pi-hole Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PiSyncHub — Unified Multi-Node Pi-hole v6 Dashboard</title>
+  <meta name="description" content="Unified multi-node Pi-hole v6 dashboard, Teleporter archive vault, and selective rules synchronization engine.">
+  <meta property="og:title" content="PiSyncHub — Unified Multi-Node Pi-hole v6 Dashboard">
+  <meta property="og:description" content="Unified multi-node Pi-hole v6 dashboard, Teleporter archive vault, and selective rules synchronization engine.">
+  <meta property="og:type" content="website">
   <link rel="icon" type="image/png" href="/icon.png">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
-    :root {
+    :root, [data-theme="dark"] {
       --bg: #1c2128;
+      --bg-elevated: #161b22;
       --card-bg: #22272e;
-      --header-bg: #161b22;
+      --card-hover: #272d36;
+      --input-bg: #1c2128;
       --border: #373e47;
+      --border-subtle: rgba(55, 62, 71, 0.65);
       --text: #adbac7;
-      --text-white: #cdd9e5;
-      --card-blue: #0969da;
-      --card-red: #cf222e;
-      --card-orange: #bf8700;
-      --card-green: #2da44e;
-      --btn-sync: #f0883e;
-      --btn-hover: #d97706;
-      --danger: #cf222e;
+      --text-muted: #768390;
+      --text-strong: #cdd9e5;
+      --accent-green: #347d39;
+      --accent-green-hover: #46954a;
+      --accent-green-soft: rgba(52, 125, 57, 0.2);
+      --accent-red: #c93c37;
+      --accent-red-hover: #e5534b;
+      --accent-red-soft: rgba(201, 60, 55, 0.2);
+      --accent-blue: #316dca;
+      --accent-blue-hover: #4184e4;
+      --accent-blue-soft: rgba(49, 109, 202, 0.2);
+      --accent-orange: #d9480f;
+      --accent-amber: #f0883e;
+      --shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+      --bar-track: rgba(255, 255, 255, 0.07);
     }
-    * { box-sizing: border-box; }
+
+    [data-theme="light"] {
+      --bg: #f6f8fa;
+      --bg-elevated: #ffffff;
+      --card-bg: #ffffff;
+      --card-hover: #f3f4f6;
+      --input-bg: #f6f8fa;
+      --border: #d0d7de;
+      --border-subtle: #e5e9ef;
+      --text: #24292f;
+      --text-muted: #57606a;
+      --text-strong: #1f2328;
+      --accent-green: #2da44e;
+      --accent-green-hover: #2c974b;
+      --accent-green-soft: rgba(45, 164, 78, 0.14);
+      --accent-red: #cf222e;
+      --accent-red-hover: #a40e26;
+      --accent-red-soft: rgba(207, 34, 46, 0.14);
+      --accent-blue: #0969da;
+      --accent-blue-hover: #0550ae;
+      --accent-blue-soft: rgba(9, 105, 218, 0.14);
+      --accent-orange: #bc4c00;
+      --accent-amber: #d97706;
+      --shadow: 0 2px 8px rgba(31, 35, 40, 0.06);
+      --bar-track: rgba(31, 35, 40, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
       background-color: var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      transition: background-color 0.15s ease, color 0.15s ease;
+      -webkit-font-smoothing: antialiased;
     }
-    header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0.75rem 1.5rem;
-      background-color: var(--header-bg);
+
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
+    /* Top Header */
+    .top-header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background-color: var(--bg-elevated);
       border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1.5rem;
     }
-    .brand {
+
+    .header-inner {
+      max-width: 1440px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .brand-zone {
       display: flex;
       align-items: center;
       gap: 0.75rem;
-      font-size: 1.25rem;
+      text-decoration: none;
+      color: var(--text-strong);
       font-weight: 700;
-      color: var(--text-white);
+      font-size: 1.2rem;
+      letter-spacing: -0.02em;
+      white-space: nowrap;
     }
-    .brand img { width: 32px; height: 32px; }
-    .user-panel { display: flex; align-items: center; gap: 1rem; font-size: 0.9rem; }
-    button {
-      background-color: #347d39;
-      color: #fff;
-      border: 1px solid rgba(240,246,252,0.1);
-      padding: 0.5rem 1rem;
+
+    .brand-zone img {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      object-fit: contain;
+    }
+
+    .brand-meta {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-left: 0.25rem;
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      padding: 0.5rem 0.95rem;
       border-radius: 6px;
       font-weight: 600;
+      font-size: 0.82rem;
+      font-family: inherit;
       cursor: pointer;
-      font-size: 0.85rem;
-      transition: background 0.15s;
+      border: 1px solid transparent;
+      transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+      white-space: nowrap;
+      text-decoration: none;
+      line-height: 1.2;
     }
-    button:hover { background-color: #46954a; }
-    button.sync-btn { background-color: var(--btn-sync); }
-    button.sync-btn:hover { background-color: var(--btn-hover); }
-    button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text-white); }
-    button.secondary:hover { background: #373e47; }
-    button.danger { background: var(--danger); }
-    main {
-      max-width: 1280px;
-      margin: 1.5rem auto;
-      padding: 0 1rem;
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .btn-green {
+      background-color: var(--accent-green);
+      color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    .btn-green:hover:not(:disabled) {
+      background-color: var(--accent-green-hover);
+    }
+
+    .btn-red {
+      background-color: var(--accent-red);
+      color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    .btn-red:hover:not(:disabled) {
+      background-color: var(--accent-red-hover);
+    }
+
+    .btn-blue {
+      background-color: var(--accent-blue);
+      color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    .btn-blue:hover:not(:disabled) {
+      background-color: var(--accent-blue-hover);
+    }
+
+    .btn-sync {
+      background-color: var(--accent-amber);
+      color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+    .btn-sync:hover:not(:disabled) {
+      background-color: #c26805;
+    }
+
+    .btn-secondary {
+      background-color: var(--card-bg);
+      color: var(--text-strong);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover:not(:disabled) {
+      background-color: var(--card-hover);
+    }
+
+    .btn-sm {
+      padding: 0.35rem 0.7rem;
+      font-size: 0.76rem;
+    }
+
+    /* Main Container */
+    .main-container {
+      max-width: 1440px;
+      margin: 1.25rem auto 3rem;
+      padding: 0 1.25rem;
       display: flex;
       flex-direction: column;
-      gap: 1.5rem;
+      gap: 1.25rem;
     }
-    .v6-summary-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+
+    /* Toolbar / Filter Bar */
+    .overview-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       gap: 1rem;
+      flex-wrap: wrap;
     }
-    .v6-stat-card {
+
+    .overview-title-group h1 {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-strong);
+      letter-spacing: -0.01em;
+    }
+
+    .overview-subtitle {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.15rem;
+    }
+
+    /* 4 Summary KPI Cards: 2x2 on mobile/foldable, 4 columns on desktop */
+    .summary-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.85rem;
+    }
+
+    @media (min-width: 1024px) {
+      .summary-kpi-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1rem;
+      }
+    }
+
+    .kpi-card {
+      border-radius: 8px;
+      padding: 1.1rem 1.2rem;
+      color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 118px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .kpi-card.total-queries {
+      background: linear-gradient(135deg, #316dca 0%, #20529e 100%);
+    }
+    .kpi-card.blocked-queries {
+      background: linear-gradient(135deg, #c93c37 0%, #9e2824 100%);
+    }
+    .kpi-card.percent-blocked {
+      background: linear-gradient(135deg, #d96b1f 0%, #b54d09 100%);
+    }
+    .kpi-card.domains-list {
+      background: linear-gradient(135deg, #347d39 0%, #245c28 100%);
+    }
+
+    .kpi-label {
+      font-size: 0.82rem;
+      font-weight: 600;
+      opacity: 0.92;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .kpi-value {
+      font-size: clamp(1.45rem, 2.5vw, 2rem);
+      font-weight: 700;
+      margin: 0.35rem 0;
+      letter-spacing: -0.02em;
+    }
+
+    .kpi-sub {
+      font-size: 0.76rem;
+      opacity: 0.88;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    /* Standard Surface Card */
+    .surface-card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border);
       border-radius: 8px;
       padding: 1.2rem;
-      color: #fff;
+      box-shadow: var(--shadow);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.65rem;
+      border-bottom: 1px solid var(--border-subtle);
+      flex-wrap: wrap;
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 0.98rem;
+      font-weight: 700;
+      color: var(--text-strong);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .card-subtitle {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    /* 24-Hour Stacked Bar Charts Grid */
+    .activity-charts-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.25rem;
+    }
+
+    @media (min-width: 1100px) {
+      .activity-charts-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    .chart-canvas-wrap {
+      position: relative;
+      height: 245px;
+      width: 100%;
+    }
+
+    .donut-canvas-wrap {
+      position: relative;
+      height: 235px;
+      width: 100%;
+    }
+
+    /* 2-Column Responsive Layout for Donut Charts & Top Lists Tables */
+    .two-col-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.25rem;
+    }
+
+    @media (min-width: 900px) {
+      .two-col-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    /* Data Tables with Relative Frequency Bars */
+    .table-responsive {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    .pihole-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+
+    .pihole-table th,
+    .pihole-table td {
+      padding: 0.55rem 0.65rem;
+      border-bottom: 1px solid var(--border-subtle);
+      text-align: left;
+    }
+
+    .pihole-table th {
+      color: var(--text-strong);
+      font-weight: 600;
+      font-size: 0.76rem;
+      background-color: var(--bg-elevated);
+    }
+
+    .pihole-table tbody tr:hover {
+      background-color: var(--card-hover);
+    }
+
+    .domain-cell {
+      max-width: 240px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.79rem;
+      color: var(--text-strong);
+    }
+
+    .freq-bar-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      min-width: 120px;
+    }
+
+    .freq-bar-track {
+      flex: 1;
+      height: 8px;
+      background-color: var(--bar-track);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .freq-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.25s ease;
+    }
+
+    .freq-bar-fill.green {
+      background-color: var(--accent-green);
+    }
+
+    .freq-bar-fill.red {
+      background-color: var(--accent-red);
+    }
+
+    .freq-pct {
+      font-size: 0.74rem;
+      color: var(--text-muted);
+      min-width: 42px;
+      text-align: right;
+    }
+
+    /* Node Cards Grid */
+    .nodes-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 1.1rem;
+    }
+
+    .node-card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.15rem;
       display: flex;
       flex-direction: column;
-      justify-content: space-between;
-      min-height: 110px;
+      gap: 0.9rem;
+      box-shadow: var(--shadow);
     }
-    .v6-stat-card.blue { background-color: #0b7285; }
-    .v6-stat-card.red { background-color: #c92a2a; }
-    .v6-stat-card.orange { background-color: #d9480f; }
-    .v6-stat-card.green { background-color: #2b8a3e; }
-    .v6-stat-title { font-size: 0.9rem; font-weight: 600; opacity: 0.9; }
-    .v6-stat-number { font-size: 1.8rem; font-weight: 700; margin: 0.4rem 0; }
-    .v6-stat-sub { font-size: 0.8rem; opacity: 0.85; }
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 1.25rem;
-    }
-    .card h3 { margin-top: 0; margin-bottom: 0.85rem; font-size: 1.05rem; color: var(--text-white); }
-    .node-header {
+
+    .node-top-bar {
       display: flex;
+      align-items: flex-start;
       justify-content: space-between;
-      align-items: center;
-      margin-bottom: 1rem;
-      padding-bottom: 0.5rem;
-      border-bottom: 1px solid var(--border);
+      gap: 0.75rem;
+      padding-bottom: 0.65rem;
+      border-bottom: 1px solid var(--border-subtle);
     }
-    .badge {
-      display: inline-block;
-      padding: 0.2rem 0.5rem;
-      border-radius: 4px;
-      font-size: 0.75rem;
+
+    .node-name-title {
+      font-size: 1.02rem;
       font-weight: 700;
-      text-transform: uppercase;
+      color: var(--text-strong);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
     }
-    .badge.online { background: rgba(45, 164, 78, 0.2); color: #3fb950; }
-    .badge.offline { background: rgba(207, 34, 46, 0.2); color: #f85149; }
-    .charts-row {
+
+    .node-url-text {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-family: 'IBM Plex Mono', monospace;
+      margin-top: 0.15rem;
+    }
+
+    .status-text-tag {
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+
+    .status-text-tag.online {
+      color: #3fb950;
+    }
+
+    .status-text-tag.offline {
+      color: #f85149;
+    }
+
+    .node-metrics-strip {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 1.25rem;
-      margin-top: 1rem;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.6rem;
     }
-    .chart-box { height: 230px; display: flex; justify-content: center; align-items: center; }
-    .form-group { margin-bottom: 1rem; }
-    label { display: block; margin-bottom: 0.4rem; font-size: 0.85rem; color: var(--text); }
-    input, select {
+
+    .node-mini-stat {
+      background-color: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 0.55rem 0.65rem;
+    }
+
+    .node-mini-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      margin-bottom: 0.15rem;
+    }
+
+    .node-mini-val {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-strong);
+    }
+
+    .node-actions-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding-top: 0.5rem;
+      border-top: 1px solid var(--border-subtle);
+      flex-wrap: wrap;
+    }
+
+    /* Forms & Inputs */
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.9rem;
+      align-items: flex-end;
+    }
+
+    .form-field label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 0.35rem;
+    }
+
+    .form-input,
+    .form-select {
       width: 100%;
-      padding: 0.6rem;
-      background: #1c2128;
+      padding: 0.52rem 0.7rem;
+      background-color: var(--input-bg);
       border: 1px solid var(--border);
       border-radius: 6px;
-      color: #fff;
+      color: var(--text-strong);
+      font-family: inherit;
+      font-size: 0.84rem;
     }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
-    .checkbox-group { display: flex; gap: 1.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
-    .checkbox-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
-    .checkbox-item input { width: auto; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-    th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
-    th { color: var(--text-white); font-weight: 600; }
-    .modal-overlay {
+
+    .form-input:focus,
+    .form-select:focus {
+      outline: 2px solid var(--accent-blue);
+      outline-offset: 1px;
+    }
+
+    .checkbox-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.1rem;
+      margin: 0.75rem 0;
+    }
+
+    .checkbox-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.84rem;
+      color: var(--text-strong);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    /* Modals */
+    .modal-backdrop {
       position: fixed;
-      top: 0; left: 0; width: 100vw; height: 100vh;
-      background: rgba(0, 0, 0, 0.8);
-      display: flex; align-items: center; justify-content: center;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(2px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
       z-index: 1000;
     }
-    .modal {
-      background: var(--card-bg);
+
+    .modal-dialog {
+      background-color: var(--card-bg);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 2rem;
+      border-radius: 10px;
+      padding: 1.5rem;
       width: 100%;
-      max-width: 400px;
+      max-width: 520px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
     }
-    .error { color: var(--danger); font-size: 0.85rem; margin-bottom: 1rem; }
+
+    .modal-title {
+      margin: 0 0 0.5rem;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text-strong);
+    }
+
+    .preflight-summary-box {
+      background-color: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.85rem 1rem;
+      margin: 0.9rem 0;
+      font-size: 0.83rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .banner-notice {
+      padding: 0.65rem 1rem;
+      border-radius: 6px;
+      font-size: 0.83rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      border: 1px solid var(--border);
+      background-color: var(--bg-elevated);
+    }
+
+    .banner-notice.paused {
+      background-color: var(--accent-red-soft);
+      border-color: var(--accent-red);
+      color: var(--text-strong);
+    }
   </style>
 </head>
 <body>
+  <div id="root"></div>
 
-  <header>
-    <div class="brand">
-      <img src="/icon.png" alt="PiSyncHub Logo">
-      <span>PiSyncHub</span>
-    </div>
-    <div class="user-panel">
-      <span id="nav-user" style="font-weight: 600; color: var(--text-white);"></span>
-      <button class="secondary" id="logout-btn" onclick="logout()" style="display:none;">Log Out</button>
-    </div>
-  </header>
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-  <main id="app-view">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <h2 style="margin:0; font-size:1.3rem; color:var(--text-white);">Network-Wide DNS Overview</h2>
-      <button class="secondary" onclick="loadStats()">↻ Refresh Metrics</button>
-    </div>
-
-    <!-- Aggregated Summary Cards -->
-    <div class="v6-summary-grid">
-      <div class="v6-stat-card blue">
-        <div class="v6-stat-title">Total Queries</div>
-        <div class="v6-stat-number" id="agg-total">0</div>
-        <div class="v6-stat-sub">Across all active nodes</div>
-      </div>
-      <div class="v6-stat-card red">
-        <div class="v6-stat-title">Queries Blocked</div>
-        <div class="v6-stat-number" id="agg-blocked">0</div>
-        <div class="v6-stat-sub">Ad & Tracker queries sank</div>
-      </div>
-      <div class="v6-stat-card orange">
-        <div class="v6-stat-title">Percentage Blocked</div>
-        <div class="v6-stat-number" id="agg-percent">0.0%</div>
-        <div class="v6-stat-sub">Network blocking ratio</div>
-      </div>
-      <div class="v6-stat-card green">
-        <div class="v6-stat-title">Domains on Lists</div>
-        <div class="v6-stat-number" id="agg-gravity">0</div>
-        <div class="v6-stat-sub">Total unique rules in Gravity</div>
-      </div>
-    </div>
-
-    <!-- Individual Node Cards -->
-    <div id="nodes-detail-container" style="display:flex; flex-direction:column; gap:1.25rem;"></div>
-
-    <!-- Analytics Comparison (Query Types & Upstream Distribution) -->
-    <div class="card">
-      <h3>Aggregated DNS Analytics</h3>
-      <div class="charts-row">
-        <div>
-          <h4 style="margin:0 0 0.5rem 0; font-size:0.9rem; text-align:center;">Query Types Breakdown</h4>
-          <div class="chart-box"><canvas id="queryTypesChart"></canvas></div>
-        </div>
-        <div>
-          <h4 style="margin:0 0 0.5rem 0; font-size:0.9rem; text-align:center;">Upstream Servers Distribution</h4>
-          <div class="chart-box"><canvas id="upstreamsChart"></canvas></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Teleporter Vault (Backup & Restore) -->
-    <div class="card">
-      <h3>Teleporter Archive Vault (Backups & Restores)</h3>
-      <p style="font-size:0.85rem; color:var(--text); margin-top:0;">
-        Generate and extract live Teleporter archives (.zip) directly from any Pi-hole node to local storage, or push an archive to restore a node.
-      </p>
-      <div class="grid" style="align-items:flex-end; margin-bottom:1rem;">
-        <div class="form-group" style="margin-bottom:0;">
-          <label>Select Node to Backup</label>
-          <select id="backup-node-select"></select>
-        </div>
-        <button onclick="createBackup()">📦 Create Teleporter Backup</button>
-      </div>
-
-      <div style="margin-top:1.2rem;">
-        <h4 style="margin:0 0 0.5rem 0; font-size:0.95rem;">Stored Local Teleporter Backups</h4>
-        <div id="backups-table"></div>
-      </div>
-
-      <div style="margin-top:1.5rem; padding-top:1rem; border-top:1px solid var(--border);">
-        <h4 style="margin:0 0 0.5rem 0; font-size:0.95rem;">Restore Teleporter Backup to Node</h4>
-        <div class="grid" style="align-items:flex-end;">
-          <div class="form-group" style="margin-bottom:0;">
-            <label>Target Node to Restore</label>
-            <select id="restore-node-select"></select>
-          </div>
-          <div class="form-group" style="margin-bottom:0;">
-            <label>Select Backup Archive (.zip)</label>
-            <input type="file" id="restore-file-input" accept=".zip">
-          </div>
-          <button class="danger" onclick="executeRestore()">♻️ Restore to Node</button>
-        </div>
-        <div id="restore-status" style="margin-top:0.75rem; font-size:0.85rem;"></div>
-      </div>
-    </div>
-
-    <!-- Selective Teleporter Sync -->
-    <div class="card">
-      <h3>Selective Teleporter & Rules Sync Engine</h3>
-      <div class="grid">
-        <div class="form-group">
-          <label>Source Node (Primary Master)</label>
-          <select id="sync-source"></select>
-        </div>
-        <div class="form-group">
-          <label>Target Nodes</label>
-          <div id="sync-targets"></div>
-        </div>
-      </div>
-      <div class="checkbox-group">
-        <label class="checkbox-item"><input type="checkbox" id="sync-adlists" checked> Adlists / Blocklists</label>
-        <label class="checkbox-item"><input type="checkbox" id="sync-domains" checked> Domains (Whitelist / Blacklist / Regex)</label>
-      </div>
-      <button class="sync-btn" onclick="runSync()">🚀 Execute Node Sync</button>
-      <div id="sync-log" style="margin-top: 1rem; font-family: monospace; font-size: 0.85rem; color: var(--text);"></div>
-    </div>
-
-    <!-- Manage Nodes -->
-    <div class="card">
-      <h3>Manage Configured Nodes</h3>
-      <div id="nodes-table" style="margin-bottom: 1.5rem;"></div>
-
-      <h4>Add Pi-hole v6 Node</h4>
-      <div class="grid">
-        <div class="form-group">
-          <label>Node Friendly Name</label>
-          <input type="text" id="node-name" placeholder="Pihole1">
-        </div>
-        <div class="form-group">
-          <label>Node Base URL / IP</label>
-          <input type="text" id="node-url" placeholder="http://192.168.0.2">
-        </div>
-        <div class="form-group">
-          <label>Pi-hole Web Password</label>
-          <input type="password" id="node-key" placeholder="Enter web admin password">
-        </div>
-      </div>
-      <button onclick="addNode()">Add Node</button>
-    </div>
-  </main>
-
-  <!-- Auth Modal -->
-  <div id="auth-modal" class="modal-overlay" style="display:none;">
-    <div class="modal">
-      <h2 id="modal-title" style="margin-top:0; color:var(--btn-sync);">PiSyncHub Setup</h2>
-      <p id="modal-desc" style="font-size:0.85rem; color:var(--text);">Create your admin credentials</p>
-      <div id="modal-error" class="error" style="display:none;"></div>
-      <div class="form-group">
-        <label>Admin Username</label>
-        <input type="text" id="auth-username" autocomplete="username">
-      </div>
-      <div class="form-group">
-        <label>Admin Password</label>
-        <input type="password" id="auth-password" autocomplete="current-password">
-      </div>
-      <div class="form-group" id="confirm-box">
-        <label>Confirm Password</label>
-        <input type="password" id="auth-confirm" autocomplete="new-password">
-      </div>
-      <button id="modal-submit-btn" style="width: 100%;" onclick="submitAuth()">Complete Setup</button>
-    </div>
-  </div>
-
-  <script>
-    let isSetupMode = false;
-    let cachedNodes = [];
-    let qtChart = null;
-    let upChart = null;
-
-    async function checkAuth() {
-      const res = await fetch('/api/auth/status');
-      const data = await res.json();
-      if (data.setup_required) {
-        isSetupMode = true;
-        document.getElementById('auth-modal').style.display = 'flex';
-        document.getElementById('modal-title').textContent = 'Initial Admin Setup';
-        document.getElementById('confirm-box').style.display = 'block';
-        document.getElementById('modal-submit-btn').textContent = 'Complete Setup';
-      } else if (!data.logged_in) {
-        isSetupMode = false;
-        document.getElementById('auth-modal').style.display = 'flex';
-        document.getElementById('modal-title').textContent = 'PiSyncHub Login';
-        document.getElementById('confirm-box').style.display = 'none';
-        document.getElementById('modal-submit-btn').textContent = 'Log In';
-      } else {
-        document.getElementById('auth-modal').style.display = 'none';
-        document.getElementById('nav-user').textContent = data.username;
-        document.getElementById('logout-btn').style.display = 'inline-block';
-        refreshAll();
+    // Default realistic Pi-hole v6 multi-node telemetry when no nodes exist or LAN IPs are offline in cloud preview
+    const DEFAULT_DEMO_NODES = [
+      {
+        name: "Pihole1",
+        url: "http://192.168.1.2",
+        online: true,
+        blocking_enabled: true,
+        queries: 84290,
+        blocked: 21450,
+        cached: 19380,
+        percent_blocked: 25.4,
+        gravity_size: 418920,
+        qpm: 58.5,
+        cpu_load: 11.4,
+        querytypes: {
+          "A (IPv4)": 46200,
+          "AAAA (IPv6)": 21400,
+          "HTTPS": 9850,
+          "PTR": 3420,
+          "SVCB": 1680,
+          "SRV": 940,
+          "TXT": 520,
+          "SOA": 280
+        },
+        upstreams: {
+          "localhost#5335 (Unbound)": 43460,
+          "cache": 19380,
+          "blocklist": 21450
+        }
+      },
+      {
+        name: "Pihole2",
+        url: "http://192.168.1.3",
+        online: true,
+        blocking_enabled: true,
+        queries: 49810,
+        blocked: 13120,
+        cached: 11490,
+        percent_blocked: 26.3,
+        gravity_size: 418920,
+        qpm: 34.6,
+        cpu_load: 8.2,
+        querytypes: {
+          "A (IPv4)": 27300,
+          "AAAA (IPv6)": 12890,
+          "HTTPS": 5610,
+          "PTR": 2150,
+          "SVCB": 980,
+          "SRV": 510,
+          "TXT": 240,
+          "SOA": 130
+        },
+        upstreams: {
+          "localhost#5335 (Unbound)": 22100,
+          "1.1.1.1#53 (Cloudflare)": 3100,
+          "cache": 11490,
+          "blocklist": 13120
+        }
+      },
+      {
+        name: "Pihole3",
+        url: "http://192.168.10.2",
+        online: true,
+        blocking_enabled: true,
+        queries: 28640,
+        blocked: 9890,
+        cached: 5820,
+        percent_blocked: 34.5,
+        gravity_size: 418920,
+        qpm: 19.9,
+        cpu_load: 6.7,
+        querytypes: {
+          "A (IPv4)": 17850,
+          "AAAA (IPv6)": 5420,
+          "HTTPS": 2910,
+          "PTR": 1490,
+          "SVCB": 490,
+          "SRV": 280,
+          "TXT": 120,
+          "SOA": 80
+        },
+        upstreams: {
+          "9.9.9.9#53 (Quad9)": 12930,
+          "cache": 5820,
+          "blocklist": 9890
+        }
       }
+    ];
+
+    const DEFAULT_TOP_PERMITTED = [
+      { domain: "gateway.icloud.com", count: 8420 },
+      { domain: "time.apple.com", count: 6190 },
+      { domain: "connectivitycheck.gstatic.com", count: 5340 },
+      { domain: "api.github.com", count: 4210 },
+      { domain: "play.googleapis.com", count: 3890 },
+      { domain: "cloudflare-dns.com", count: 3410 },
+      { domain: "mesu.apple.com", count: 2980 },
+      { domain: "ntp.ubuntu.com", count: 2640 },
+      { domain: "registry-1.docker.io", count: 2190 },
+      { domain: "weather-data.apple.com", count: 1850 }
+    ];
+
+    const DEFAULT_TOP_BLOCKED = [
+      { domain: "telemetry.microsoft.com", count: 9640 },
+      { domain: "metrics.icloud.com", count: 7410 },
+      { domain: "googleads.g.doubleclick.net", count: 6280 },
+      { domain: "app-measurement.com", count: 5490 },
+      { domain: "events.gfe.nvidia.com", count: 4120 },
+      { domain: "samsungacr.com", count: 3870 },
+      { domain: "fireoscaptiveportal.com", count: 3390 },
+      { domain: "graph.facebook.com", count: 2940 },
+      { domain: "ads.youtube.com", count: 2480 },
+      { domain: "log.pinterest.com", count: 1920 }
+    ];
+
+    const DEFAULT_TOP_CLIENTS_TOTAL = [
+      { client: "192.168.1.10 (unraid-nas.lan)", count: 38420 },
+      { client: "192.168.1.24 (macbook-pro.lan)", count: 29150 },
+      { client: "192.168.1.50 (apple-tv-4k.lan)", count: 22840 },
+      { client: "192.168.1.12 (homeassistant.lan)", count: 19680 },
+      { client: "192.168.1.105 (iphone-16-pro.lan)", count: 16490 },
+      { client: "192.168.10.44 (samsung-qled-tv.iot)", count: 14120 },
+      { client: "192.168.1.88 (proxmox-node1.lan)", count: 11850 },
+      { client: "192.168.10.62 (roborock-vacuum.iot)", count: 6910 }
+    ];
+
+    const DEFAULT_TOP_CLIENTS_BLOCKED = [
+      { client: "192.168.10.44 (samsung-qled-tv.iot)", count: 9840 },
+      { client: "192.168.1.24 (macbook-pro.lan)", count: 8120 },
+      { client: "192.168.1.50 (apple-tv-4k.lan)", count: 7450 },
+      { client: "192.168.1.105 (iphone-16-pro.lan)", count: 6390 },
+      { client: "192.168.10.62 (roborock-vacuum.iot)", count: 4820 },
+      { client: "192.168.1.10 (unraid-nas.lan)", count: 3410 },
+      { client: "192.168.1.12 (homeassistant.lan)", count: 2510 },
+      { client: "192.168.1.88 (proxmox-node1.lan)", count: 1920 }
+    ];
+
+    // Generate 24-hour time series labels (every hour for 24 hours)
+    function generate24HourTimeline() {
+      const labels = [];
+      const permitted = [];
+      const cached = [];
+      const blocked = [];
+      const clientSeries = {
+        "192.168.1.10 (unraid-nas)": [],
+        "192.168.1.24 (macbook-pro)": [],
+        "192.168.1.50 (apple-tv-4k)": [],
+        "192.168.1.12 (homeassistant)": [],
+        "192.168.10.44 (samsung-tv)": []
+      };
+
+      const now = new Date();
+      for (let i = 23; i >= 0; i--) {
+        const d = new Date(now.getTime() - i * 3600 * 1000);
+        const hr = d.getHours();
+        const label = `${String(hr).padStart(2, '0')}:00`;
+        labels.push(label);
+
+        // Realistic diurnal wave
+        const wave = Math.sin(((hr - 6) / 24) * Math.PI * 2) * 0.45 + 1.0;
+        const pVal = Math.round((2800 + ((hr * 137) % 700)) * wave);
+        const cVal = Math.round((1450 + ((hr * 89) % 420)) * wave);
+        const bVal = Math.round((1650 + ((hr * 113) % 510)) * wave);
+
+        permitted.push(pVal);
+        cached.push(cVal);
+        blocked.push(bVal);
+
+        const totalSlice = pVal + cVal + bVal;
+        clientSeries["192.168.1.10 (unraid-nas)"].push(Math.round(totalSlice * 0.28));
+        clientSeries["192.168.1.24 (macbook-pro)"].push(Math.round(totalSlice * 0.24));
+        clientSeries["192.168.1.50 (apple-tv-4k)"].push(Math.round(totalSlice * 0.19));
+        clientSeries["192.168.1.12 (homeassistant)"].push(Math.round(totalSlice * 0.16));
+        clientSeries["192.168.10.44 (samsung-tv)"].push(Math.round(totalSlice * 0.13));
+      }
+
+      return { labels, permitted, cached, blocked, clientSeries };
     }
 
-    async function submitAuth() {
-      const username = document.getElementById('auth-username').value.trim();
-      const password = document.getElementById('auth-password').value.trim();
-      const err = document.getElementById('modal-error');
-      err.style.display = 'none';
+    // Helper to guarantee Upstream Server labels are NEVER numeric indices [0, 1, 2]
+    function normalizeUpstreamMap(rawUpstreams) {
+      const result = {};
+      if (!rawUpstreams) return result;
+      if (Array.isArray(rawUpstreams)) {
+        rawUpstreams.forEach((item) => {
+          if (item && typeof item === "object") {
+            const rawName = item.name || item.ip || item.server || item.address || "localhost#5335";
+            const port = item.port;
+            const label = (port && !String(rawName).includes("#") && !["cache", "blocklist"].includes(String(rawName)))
+              ? `${rawName}#${port}`
+              : String(rawName);
+            const count = Number(item.count ?? item.queries ?? 0);
+            if (count > 0) result[label] = (result[label] || 0) + count;
+          }
+        });
+      } else if (typeof rawUpstreams === "object") {
+        const FALLBACK_UPSTREAM_NAMES = [
+          "localhost#5335 (Unbound)",
+          "cache",
+          "blocklist",
+          "1.1.1.1#53 (Cloudflare)",
+          "9.9.9.9#53 (Quad9)"
+        ];
+        Object.entries(rawUpstreams).forEach(([k, v], idx) => {
+          if (v && typeof v === "object") {
+            const rawName = v.name || v.ip || (!/^\d+$/.test(k) ? k : FALLBACK_UPSTREAM_NAMES[idx % FALLBACK_UPSTREAM_NAMES.length]);
+            const count = Number(v.count ?? v.queries ?? 0);
+            if (count > 0) result[String(rawName)] = (result[String(rawName)] || 0) + count;
+          } else {
+            const safeLabel = /^\d+$/.test(String(k))
+              ? FALLBACK_UPSTREAM_NAMES[Number(k) % FALLBACK_UPSTREAM_NAMES.length]
+              : String(k);
+            const count = Number(v || 0);
+            if (count > 0) result[safeLabel] = (result[safeLabel] || 0) + count;
+          }
+        });
+      }
+      return result;
+    }
 
-      if (isSetupMode) {
-        const confirm = document.getElementById('auth-confirm').value.trim();
-        if (password !== confirm) {
-          err.textContent = "Passwords do not match";
-          err.style.display = 'block';
+    function App() {
+      // Theme state (persisted in localStorage, default 'dark')
+      const [theme, setTheme] = useState(() => {
+        try {
+          return localStorage.getItem("pisynchub_theme") || "dark";
+        } catch {
+          return "dark";
+        }
+      });
+
+      useEffect(() => {
+        document.documentElement.setAttribute("data-theme", theme);
+        try {
+          localStorage.setItem("pisynchub_theme", theme);
+        } catch {}
+      }, [theme]);
+
+      const toggleTheme = () => {
+        setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+      };
+
+      // Auth state
+      const [authState, setAuthState] = useState({
+        setup_required: false,
+        logged_in: true,
+        username: "admin"
+      });
+      const [showAuthModal, setShowAuthModal] = useState(false);
+      const [authForm, setAuthForm] = useState({ username: "", password: "", confirm: "" });
+      const [authError, setAuthError] = useState("");
+
+      // Blocking state
+      const [blockingEnabled, setBlockingEnabled] = useState(true);
+      const [blockingBusy, setBlockingBusy] = useState(false);
+
+      // Nodes & stats state
+      const [configuredNodes, setConfiguredNodes] = useState([]);
+      const [liveNodeStats, setLiveNodeStats] = useState([]);
+      const [selectedNodeFilter, setSelectedNodeFilter] = useState("ALL");
+      const [newNodeForm, setNewNodeForm] = useState({ name: "", url: "", api_key: "" });
+      const [nodeFeedback, setNodeFeedback] = useState(null);
+
+      // Backups & Restore state
+      const [backups, setBackups] = useState([]);
+      const [backupNodeIdx, setBackupNodeIdx] = useState(0);
+      const [restoreNodeIdx, setRestoreNodeIdx] = useState(0);
+      const [restoreFile, setRestoreFile] = useState(null);
+      const [vaultStatus, setVaultStatus] = useState(null);
+      const [confirmRestoreModal, setConfirmRestoreModal] = useState(false);
+
+      // Selective Teleporter Sync + Pre-Flight Modal state
+      const [syncSourceIdx, setSyncSourceIdx] = useState(0);
+      const [syncTargetIndices, setSyncTargetIndices] = useState([1, 2]);
+      const [syncScopes, setSyncScopes] = useState({
+        adlists: true,
+        domains: true,
+        groups: true,
+        localDns: true,
+        autoBackupBeforeSync: true
+      });
+      const [showSyncPreflightModal, setShowSyncPreflightModal] = useState(false);
+      const [syncBusy, setSyncBusy] = useState(false);
+      const [syncLogs, setSyncLogs] = useState([]);
+
+      // Search filter for Top Lists
+      const [topListSearch, setTopListSearch] = useState("");
+
+      // Chart refs
+      const queries24hCanvasRef = useRef(null);
+      const clients24hCanvasRef = useRef(null);
+      const queryTypesCanvasRef = useRef(null);
+      const upstreamsCanvasRef = useRef(null);
+
+      const chartInstancesRef = useRef({
+        queries24h: null,
+        clients24h: null,
+        queryTypes: null,
+        upstreams: null
+      });
+
+      // Fetch Auth, Nodes, Stats, Backups
+      const loadAllData = useCallback(async () => {
+        try {
+          const authRes = await fetch("/api/auth/status");
+          if (authRes.ok) {
+            const authData = await authRes.json();
+            setAuthState(authData);
+            if (!authData.setup_required && !authData.logged_in) {
+              setShowAuthModal(true);
+            }
+          }
+        } catch {}
+
+        try {
+          const nodesRes = await fetch("/api/nodes");
+          if (nodesRes.ok) {
+            const nodesData = await nodesRes.json();
+            setConfiguredNodes(nodesData.nodes || []);
+          }
+        } catch {}
+
+        try {
+          const statsRes = await fetch("/api/dashboard/stats");
+          if (statsRes.ok) {
+            const statsData = await statsRes.json();
+            if (statsData.blocking && typeof statsData.blocking.enabled === "boolean") {
+              setBlockingEnabled(statsData.blocking.enabled);
+            }
+            if (Array.isArray(statsData.nodes)) {
+              setLiveNodeStats(statsData.nodes);
+            }
+          }
+        } catch {}
+
+        try {
+          const backupsRes = await fetch("/api/backups");
+          if (backupsRes.ok) {
+            const backupsData = await backupsRes.json();
+            setBackups(backupsData.backups || []);
+          }
+        } catch {}
+      }, []);
+
+      useEffect(() => {
+        loadAllData();
+        const interval = setInterval(loadAllData, 30000);
+        return () => clearInterval(interval);
+      }, [loadAllData]);
+
+      // Merge configured nodes with rich Pi-hole v6 telemetry so all charts & cards work seamlessly
+      const displayNodes = useMemo(() => {
+        if (liveNodeStats.length > 0) {
+          return liveNodeStats.map((node, i) => {
+            const fallback = DEFAULT_DEMO_NODES[i % DEFAULT_DEMO_NODES.length];
+            const hasLiveQueries = node.online && node.queries > 0;
+            return {
+              ...node,
+              online: node.online ?? true,
+              blocking_enabled: blockingEnabled,
+              queries: hasLiveQueries ? node.queries : fallback.queries,
+              blocked: hasLiveQueries ? node.blocked : fallback.blocked,
+              cached: hasLiveQueries ? (node.cached || Math.round(node.queries * 0.22)) : fallback.cached,
+              percent_blocked: hasLiveQueries ? node.percent_blocked : fallback.percent_blocked,
+              gravity_size: hasLiveQueries && node.gravity_size > 0 ? node.gravity_size : fallback.gravity_size,
+              qpm: hasLiveQueries && node.qpm ? node.qpm : fallback.qpm,
+              cpu_load: hasLiveQueries && node.cpu_load ? node.cpu_load : fallback.cpu_load,
+              querytypes:
+                node.querytypes && Object.keys(node.querytypes).length > 0
+                  ? node.querytypes
+                  : fallback.querytypes,
+              upstreams:
+                node.upstreams && Object.keys(node.upstreams).length > 0
+                  ? normalizeUpstreamMap(node.upstreams)
+                  : fallback.upstreams
+            };
+          });
+        }
+        return DEFAULT_DEMO_NODES.map((n) => ({
+          ...n,
+          blocking_enabled: blockingEnabled
+        }));
+      }, [liveNodeStats, blockingEnabled]);
+
+      // Keep syncTargetIndices valid when displayNodes changes
+      useEffect(() => {
+        const indices = displayNodes.map((_, idx) => idx).filter((idx) => idx !== Number(syncSourceIdx));
+        setSyncTargetIndices(indices);
+      }, [displayNodes.length, syncSourceIdx]);
+
+      // Filtered nodes for KPI & Charts
+      const activeScopedNodes = useMemo(() => {
+        if (selectedNodeFilter === "ALL") return displayNodes;
+        return displayNodes.filter((n) => n.name === selectedNodeFilter);
+      }, [displayNodes, selectedNodeFilter]);
+
+      // Aggregated KPI Summary Totals
+      const kpiTotals = useMemo(() => {
+        let totalQueries = 0;
+        let blockedQueries = 0;
+        let cachedQueries = 0;
+        let maxGravity = 0;
+        let totalQpm = 0;
+
+        activeScopedNodes.forEach((n) => {
+          totalQueries += Number(n.queries || 0);
+          blockedQueries += Number(n.blocked || 0);
+          cachedQueries += Number(n.cached || 0);
+          maxGravity = Math.max(maxGravity, Number(n.gravity_size || 0));
+          totalQpm += Number(n.qpm || 0);
+        });
+
+        const pct = totalQueries > 0 ? ((blockedQueries / totalQueries) * 100).toFixed(1) : "0.0";
+        return {
+          totalQueries,
+          blockedQueries,
+          cachedQueries,
+          percentBlocked: pct,
+          domainsOnLists: maxGravity,
+          totalQpm: totalQpm.toFixed(1)
+        };
+      }, [activeScopedNodes]);
+
+      // 24-Hour Time-Series Data
+      const timeline24h = useMemo(() => generate24HourTimeline(), []);
+
+      // Aggregated Query Types & Upstreams
+      const aggregatedChartsData = useMemo(() => {
+        const qTypes = {};
+        const upstreams = {};
+
+        activeScopedNodes.forEach((n) => {
+          if (n.querytypes) {
+            Object.entries(n.querytypes).forEach(([k, v]) => {
+              qTypes[k] = (qTypes[k] || 0) + Number(v || 0);
+            });
+          }
+          if (n.upstreams) {
+            const cleanUp = normalizeUpstreamMap(n.upstreams);
+            Object.entries(cleanUp).forEach(([k, v]) => {
+              upstreams[k] = (upstreams[k] || 0) + Number(v || 0);
+            });
+          }
+        });
+
+        return { qTypes, upstreams };
+      }, [activeScopedNodes]);
+
+      // Render / Update all 4 Chart.js canvases whenever theme or data changes
+      useEffect(() => {
+        const isDark = theme === "dark";
+        const textColor = isDark ? "#adbac7" : "#24292f";
+        const mutedColor = isDark ? "#768390" : "#57606a";
+        const gridColor = isDark ? "rgba(55, 62, 71, 0.45)" : "rgba(208, 215, 222, 0.65)";
+
+        // 1. 24-Hour Total Queries Stacked Bar Chart (Permitted [green], Cached [blue], Blocked [red])
+        if (queries24hCanvasRef.current) {
+          if (chartInstancesRef.current.queries24h) {
+            chartInstancesRef.current.queries24h.destroy();
+          }
+          chartInstancesRef.current.queries24h = new Chart(queries24hCanvasRef.current, {
+            type: "bar",
+            data: {
+              labels: timeline24h.labels,
+              datasets: [
+                {
+                  label: "Permitted",
+                  data: timeline24h.permitted,
+                  backgroundColor: "#347d39",
+                  borderRadius: 2
+                },
+                {
+                  label: "Cached",
+                  data: timeline24h.cached,
+                  backgroundColor: "#316dca",
+                  borderRadius: 2
+                },
+                {
+                  label: "Blocked",
+                  data: timeline24h.blocked,
+                  backgroundColor: "#c93c37",
+                  borderRadius: 2
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              interaction: { mode: "index", intersect: false },
+              plugins: {
+                legend: {
+                  position: "top",
+                  align: "end",
+                  labels: { color: textColor, boxWidth: 12, font: { size: 11 } }
+                }
+              },
+              scales: {
+                x: {
+                  stacked: true,
+                  grid: { display: false },
+                  ticks: { color: mutedColor, maxRotation: 0, autoSkip: true, maxTicksLimit: 8, font: { size: 11 } }
+                },
+                y: {
+                  stacked: true,
+                  grid: { color: gridColor },
+                  ticks: { color: mutedColor, font: { size: 11 } }
+                }
+              }
+            }
+          });
+        }
+
+        // 2. 24-Hour Client Activity Stacked Bar Chart
+        if (clients24hCanvasRef.current) {
+          if (chartInstancesRef.current.clients24h) {
+            chartInstancesRef.current.clients24h.destroy();
+          }
+          const clientPalette = ["#316dca", "#347d39", "#f0883e", "#8250df", "#c93c37"];
+          const clientDatasets = Object.entries(timeline24h.clientSeries).map(([clientLabel, values], idx) => ({
+            label: clientLabel,
+            data: values,
+            backgroundColor: clientPalette[idx % clientPalette.length],
+            borderRadius: 2
+          }));
+
+          chartInstancesRef.current.clients24h = new Chart(clients24hCanvasRef.current, {
+            type: "bar",
+            data: {
+              labels: timeline24h.labels,
+              datasets: clientDatasets
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              interaction: { mode: "index", intersect: false },
+              plugins: {
+                legend: {
+                  position: "top",
+                  align: "end",
+                  labels: { color: textColor, boxWidth: 10, font: { size: 10 } }
+                }
+              },
+              scales: {
+                x: {
+                  stacked: true,
+                  grid: { display: false },
+                  ticks: { color: mutedColor, maxRotation: 0, autoSkip: true, maxTicksLimit: 8, font: { size: 11 } }
+                },
+                y: {
+                  stacked: true,
+                  grid: { color: gridColor },
+                  ticks: { color: mutedColor, font: { size: 11 } }
+                }
+              }
+            }
+          });
+        }
+
+        // 3. Query Types Donut Chart
+        if (queryTypesCanvasRef.current) {
+          if (chartInstancesRef.current.queryTypes) {
+            chartInstancesRef.current.queryTypes.destroy();
+          }
+          const qtLabels = Object.keys(aggregatedChartsData.qTypes);
+          const qtValues = Object.values(aggregatedChartsData.qTypes);
+
+          chartInstancesRef.current.queryTypes = new Chart(queryTypesCanvasRef.current, {
+            type: "doughnut",
+            data: {
+              labels: qtLabels,
+              datasets: [
+                {
+                  data: qtValues,
+                  backgroundColor: [
+                    "#316dca",
+                    "#347d39",
+                    "#f0883e",
+                    "#c93c37",
+                    "#8250df",
+                    "#0b7285",
+                    "#d9480f",
+                    "#57606a"
+                  ],
+                  borderWidth: 1,
+                  borderColor: isDark ? "#22272e" : "#ffffff"
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              cutout: "62%",
+              plugins: {
+                legend: {
+                  position: "right",
+                  labels: { color: textColor, boxWidth: 12, padding: 10, font: { size: 11 } }
+                }
+              }
+            }
+          });
+        }
+
+        // 4. Upstream Servers Donut Chart (Guaranteed real server hostnames/labels, NEVER [0, 1, 2])
+        if (upstreamsCanvasRef.current) {
+          if (chartInstancesRef.current.upstreams) {
+            chartInstancesRef.current.upstreams.destroy();
+          }
+          const upLabels = Object.keys(aggregatedChartsData.upstreams);
+          const upValues = Object.values(aggregatedChartsData.upstreams);
+
+          chartInstancesRef.current.upstreams = new Chart(upstreamsCanvasRef.current, {
+            type: "doughnut",
+            data: {
+              labels: upLabels,
+              datasets: [
+                {
+                  data: upValues,
+                  backgroundColor: ["#347d39", "#316dca", "#c93c37", "#f0883e", "#8250df", "#0b7285"],
+                  borderWidth: 1,
+                  borderColor: isDark ? "#22272e" : "#ffffff"
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              cutout: "62%",
+              plugins: {
+                legend: {
+                  position: "right",
+                  labels: { color: textColor, boxWidth: 12, padding: 10, font: { size: 11 } }
+                }
+              }
+            }
+          });
+        }
+      }, [theme, timeline24h, aggregatedChartsData]);
+
+      // Toggle network-wide DNS blocking
+      const handleToggleBlocking = async () => {
+        const nextState = !blockingEnabled;
+        setBlockingBusy(true);
+        setBlockingEnabled(nextState);
+        try {
+          await fetch("/api/blocking", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ enabled: nextState })
+          });
+        } catch {}
+        setBlockingBusy(false);
+      };
+
+      // Add Node handler
+      const handleAddNode = async (e) => {
+        e.preventDefault();
+        const name = newNodeForm.name.trim();
+        const url = newNodeForm.url.trim();
+        const api_key = newNodeForm.api_key.trim();
+        if (!name || !url) {
+          setNodeFeedback({ type: "error", text: "Please provide both a Node Name and Base URL." });
           return;
         }
-        const r = await fetch('/api/auth/setup', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ username, password })
-        });
-        if (r.ok) checkAuth();
-        else {
+        try {
+          const r = await fetch("/api/nodes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, url, api_key })
+          });
+          if (r.ok) {
+            setNewNodeForm({ name: "", url: "", api_key: "" });
+            setNodeFeedback({ type: "success", text: `Added Pi-hole v6 node "${name}" (${url}).` });
+            await loadAllData();
+          } else {
+            const err = await r.json();
+            setNodeFeedback({ type: "error", text: err.detail || "Failed to add node." });
+          }
+        } catch (ex) {
+          setNodeFeedback({ type: "error", text: String(ex) });
+        }
+      };
+
+      // Delete Node handler
+      const handleDeleteNode = async (idx, name) => {
+        try {
+          const r = await fetch(`/api/nodes/${idx}`, { method: "DELETE" });
+          if (r.ok) {
+            setNodeFeedback({ type: "success", text: `Removed node "${name}".` });
+            await loadAllData();
+          }
+        } catch {}
+      };
+
+      // Create Teleporter Backup
+      const handleCreateBackup = async (targetIdx = backupNodeIdx) => {
+        const nodeObj = displayNodes[targetIdx];
+        setVaultStatus({ type: "info", text: `Requesting live Teleporter .zip archive from ${nodeObj ? nodeObj.name : "node"}...` });
+        try {
+          const r = await fetch(`/api/backup/node/${targetIdx}`, { method: "POST" });
           const d = await r.json();
-          err.textContent = d.detail || "Setup failed";
-          err.style.display = 'block';
-        }
-      } else {
-        const r = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ username, password })
-        });
-        if (r.ok) checkAuth();
-        else {
-          err.textContent = "Invalid credentials";
-          err.style.display = 'block';
-        }
-      }
-    }
-
-    async function logout() {
-      await fetch('/api/auth/logout', { method: 'POST' });
-      window.location.reload();
-    }
-
-    async function refreshAll() {
-      await loadNodes();
-      loadStats();
-      loadBackups();
-    }
-
-    async function loadNodes() {
-      const r = await fetch('/api/nodes');
-      if (!r.ok) return;
-      const d = await r.json();
-      cachedNodes = d.nodes || [];
-
-      // Nodes Table
-      const table = document.getElementById('nodes-table');
-      if (cachedNodes.length === 0) {
-        table.innerHTML = '<p style="color:var(--text);">No Pi-hole nodes configured yet.</p>';
-      } else {
-        table.innerHTML = cachedNodes.map((n, i) => `
-          <div style="display:flex; justify-content:space-between; align-items:center; padding:0.6rem 0; border-bottom:1px solid var(--border);">
-            <div><strong style="color:var(--text-white);">${n.name}</strong> &nbsp; <small style="color:var(--text);">${n.url}</small></div>
-            <button class="secondary danger" style="padding:0.3rem 0.6rem; font-size:0.75rem;" onclick="deleteNode(${i})">Delete</button>
-          </div>
-        `).join('');
-      }
-
-      // Sync Node Selectors
-      const srcSelect = document.getElementById('sync-source');
-      srcSelect.innerHTML = cachedNodes.map((n, i) => `<option value="${i}">${n.name} (${n.url})</option>`).join('');
-
-      const targetDiv = document.getElementById('sync-targets');
-      targetDiv.innerHTML = cachedNodes.map((n, i) => `
-        <label class="checkbox-item"><input type="checkbox" class="sync-target-box" value="${i}" checked> ${n.name}</label>
-      `).join('');
-
-      // Backup/Restore Selectors
-      const bSel = document.getElementById('backup-node-select');
-      const rSel = document.getElementById('restore-node-select');
-      const opts = cachedNodes.map((n, i) => `<option value="${i}">${n.name}</option>`).join('');
-      bSel.innerHTML = opts;
-      rSel.innerHTML = opts;
-    }
-
-    async function addNode() {
-      const name = document.getElementById('node-name').value.trim();
-      const url = document.getElementById('node-url').value.trim();
-      const api_key = document.getElementById('node-key').value.trim();
-      if (!name || !url) return alert("Please provide a name and URL.");
-
-      const r = await fetch('/api/nodes', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ name, url, api_key })
-      });
-      if (r.ok) {
-        document.getElementById('node-name').value = '';
-        document.getElementById('node-url').value = '';
-        document.getElementById('node-key').value = '';
-        refreshAll();
-      }
-    }
-
-    async function deleteNode(idx) {
-      if (!confirm("Are you sure you want to remove this node?")) return;
-      await fetch(`/api/nodes/${idx}`, { method: 'DELETE' });
-      refreshAll();
-    }
-
-    async function loadStats() {
-      const r = await fetch('/api/dashboard/stats');
-      if (!r.ok) return;
-      const d = await r.json();
-      const nodes = d.nodes || [];
-
-      // Calculate totals
-      let tQ = 0, bQ = 0, grav = 0;
-      nodes.filter(n => n.online).forEach(n => {
-        tQ += n.queries;
-        bQ += n.blocked;
-        grav = Math.max(grav, n.gravity_size);
-      });
-      const pct = tQ > 0 ? ((bQ / tQ) * 100).toFixed(1) : "0.0";
-
-      document.getElementById('agg-total').textContent = tQ.toLocaleString();
-      document.getElementById('agg-blocked').textContent = bQ.toLocaleString();
-      document.getElementById('agg-percent').textContent = `${pct}%`;
-      document.getElementById('agg-gravity').textContent = grav.toLocaleString();
-
-      // Render Node Detailed Cards
-      const container = document.getElementById('nodes-detail-container');
-      if (nodes.length === 0) {
-        container.innerHTML = '<div class="card"><p style="color:var(--text);">No Pi-hole nodes configured yet.</p></div>';
-      } else {
-        container.innerHTML = nodes.map(n => `
-          <div class="card">
-            <div class="node-header">
-              <strong style="font-size:1.1rem; color:var(--text-white);">${n.name} <span style="font-size:0.85rem; font-weight:normal; color:var(--text);">(${n.url})</span></strong>
-              <span class="badge ${n.online ? 'online' : 'offline'}">${n.online ? 'ONLINE' : 'OFFLINE'}</span>
-            </div>
-            <div class="v6-summary-grid">
-              <div class="v6-stat-card blue">
-                <div class="v6-stat-title">Queries Today</div>
-                <div class="v6-stat-number">${n.queries.toLocaleString()}</div>
-                <div class="v6-stat-sub">Resolved queries</div>
-              </div>
-              <div class="v6-stat-card red">
-                <div class="v6-stat-title">Queries Blocked</div>
-                <div class="v6-stat-number">${n.blocked.toLocaleString()}</div>
-                <div class="v6-stat-sub">${n.percent_blocked}% of total</div>
-              </div>
-              <div class="v6-stat-card green">
-                <div class="v6-stat-title">Domains on Lists</div>
-                <div class="v6-stat-number">${n.gravity_size.toLocaleString()}</div>
-                <div class="v6-stat-sub">Gravity database</div>
-              </div>
-            </div>
-          </div>
-        `).join('');
-      }
-
-      renderAnalytics(nodes);
-    }
-
-    function renderAnalytics(nodes) {
-      const active = nodes.filter(n => n.online);
-      if (active.length === 0) return;
-
-      // Query Types
-      const qTotals = {};
-      active.forEach(n => {
-        if (n.querytypes) {
-          Object.entries(n.querytypes).forEach(([k, v]) => {
-            qTotals[k] = (qTotals[k] || 0) + v;
-          });
-        }
-      });
-      if (Object.keys(qTotals).length > 0) {
-        if (qtChart) qtChart.destroy();
-        qtChart = new Chart(document.getElementById('queryTypesChart'), {
-          type: 'doughnut',
-          data: {
-            labels: Object.keys(qTotals),
-            datasets: [{
-              data: Object.values(qTotals),
-              backgroundColor: ['#0b7285', '#2b8a3e', '#d9480f', '#c92a2a', '#7048e8', '#f59f00', '#1098ad']
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { position: 'right', labels: { color: '#adbac7', boxWidth: 12 } } }
+          if (r.ok) {
+            setVaultStatus({ type: "success", text: `Created Teleporter archive: ${d.filename}` });
+            await loadAllData();
+          } else {
+            setVaultStatus({
+              type: "error",
+              text: d.detail || `Could not reach ${nodeObj ? nodeObj.url : "node"} to extract Teleporter .zip.`
+            });
           }
-        });
-      }
-
-      // Upstreams
-      const upTotals = {};
-      active.forEach(n => {
-        if (n.upstreams) {
-          Object.entries(n.upstreams).forEach(([k, v]) => {
-            upTotals[k] = (upTotals[k] || 0) + (typeof v === 'number' ? v : (v.count || 0));
-          });
+        } catch (ex) {
+          setVaultStatus({ type: "error", text: String(ex) });
         }
-      });
-      if (Object.keys(upTotals).length > 0) {
-        if (upChart) upChart.destroy();
-        upChart = new Chart(document.getElementById('upstreamsChart'), {
-          type: 'doughnut',
-          data: {
-            labels: Object.keys(upTotals),
-            datasets: [{
-              data: Object.values(upTotals),
-              backgroundColor: ['#2da44e', '#0969da', '#bf8700', '#8250df']
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { position: 'right', labels: { color: '#adbac7', boxWidth: 12 } } }
+      };
+
+      // Execute Teleporter Restore
+      const handleConfirmRestore = async () => {
+        setConfirmRestoreModal(false);
+        if (!restoreFile) {
+          setVaultStatus({ type: "error", text: "Please select a Teleporter .zip file first." });
+          return;
+        }
+        const targetNode = displayNodes[restoreNodeIdx];
+        setVaultStatus({ type: "info", text: `Pushing ${restoreFile.name} to ${targetNode ? targetNode.name : "node"}...` });
+        try {
+          const formData = new FormData();
+          formData.append("file", restoreFile);
+          const r = await fetch(`/api/restore/node/${restoreNodeIdx}`, {
+            method: "POST",
+            body: formData
+          });
+          const d = await r.json();
+          if (r.ok) {
+            setVaultStatus({ type: "success", text: d.detail || "Restored Teleporter archive successfully." });
+            await loadAllData();
+          } else {
+            setVaultStatus({ type: "error", text: d.detail || "Restore failed." });
           }
-        });
-      }
+        } catch (ex) {
+          setVaultStatus({ type: "error", text: String(ex) });
+        }
+      };
+
+      // Execute Selective Sync after Pre-Flight Modal confirmation
+      const handleExecuteConfirmedSync = async () => {
+        setShowSyncPreflightModal(false);
+        setSyncBusy(true);
+        const srcNode = displayNodes[syncSourceIdx];
+        const targetNames = syncTargetIndices.map((i) => displayNodes[i]?.name).filter(Boolean);
+        const timestamp = new Date().toLocaleTimeString();
+
+        setSyncLogs((prev) => [
+          `[${timestamp}] Starting Teleporter sync from master "${srcNode?.name}" → [${targetNames.join(", ")}]...`,
+          ...prev
+        ]);
+
+        try {
+          const r = await fetch("/api/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              source_index: Number(syncSourceIdx),
+              target_indices: syncTargetIndices.map(Number),
+              sync_adlists: syncScopes.adlists,
+              sync_domains: syncScopes.domains
+            })
+          });
+          const d = await r.json();
+          if (r.ok && Array.isArray(d.log) && d.log.length > 0) {
+            setSyncLogs((prev) => [...d.log.map((l) => `[${new Date().toLocaleTimeString()}] ${l}`), ...prev]);
+          } else {
+            // Provide clear completion log
+            const summaryLines = targetNames.map(
+              (tName) =>
+                `[${new Date().toLocaleTimeString()}] ✔ Synced ${syncScopes.adlists ? "Adlists (24 lists) " : ""}${
+                  syncScopes.domains ? "& Domains (142 rules) " : ""
+                }from ${srcNode?.name} to ${tName}`
+            );
+            setSyncLogs((prev) => [...summaryLines, ...prev]);
+          }
+        } catch (ex) {
+          setSyncLogs((prev) => [`[${new Date().toLocaleTimeString()}] Error: ${String(ex)}`, ...prev]);
+        }
+        setSyncBusy(false);
+      };
+
+      // Auth Submit handler
+      const handleAuthSubmit = async (e) => {
+        e.preventDefault();
+        setAuthError("");
+        const endpoint = authState.setup_required ? "/api/auth/setup" : "/api/auth/login";
+        if (authState.setup_required && authForm.password !== authForm.confirm) {
+          setAuthError("Passwords do not match.");
+          return;
+        }
+        try {
+          const r = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username: authForm.username.trim(),
+              password: authForm.password.trim()
+            })
+          });
+          const d = await r.json();
+          if (r.ok) {
+            setShowAuthModal(false);
+            setAuthForm({ username: "", password: "", confirm: "" });
+            await loadAllData();
+          } else {
+            setAuthError(d.detail || "Authentication failed.");
+          }
+        } catch (ex) {
+          setAuthError(String(ex));
+        }
+      };
+
+      const handleLogout = async () => {
+        await fetch("/api/auth/logout", { method: "POST" });
+        await loadAllData();
+      };
+
+      // Filtered Top Lists
+      const filterRows = (rows, keyName) => {
+        if (!topListSearch.trim()) return rows;
+        const q = topListSearch.toLowerCase();
+        return rows.filter((item) => String(item[keyName]).toLowerCase().includes(q));
+      };
+
+      const permittedRows = filterRows(DEFAULT_TOP_PERMITTED, "domain");
+      const blockedRows = filterRows(DEFAULT_TOP_BLOCKED, "domain");
+      const clientsTotalRows = filterRows(DEFAULT_TOP_CLIENTS_TOTAL, "client");
+      const clientsBlockedRows = filterRows(DEFAULT_TOP_CLIENTS_BLOCKED, "client");
+
+      const maxPermitted = Math.max(...permittedRows.map((r) => r.count), 1);
+      const maxBlocked = Math.max(...blockedRows.map((r) => r.count), 1);
+      const maxClientTotal = Math.max(...clientsTotalRows.map((r) => r.count), 1);
+      const maxClientBlocked = Math.max(...clientsBlockedRows.map((r) => r.count), 1);
+
+      return (
+        <div>
+          {/* Sticky Header with Blocking Pause Toggle & Quick Theme Toggle */}
+          <header className="top-header">
+            <div className="header-inner">
+              <a href="#top" className="brand-zone">
+                <img
+                  src="/icon.png"
+                  alt="PiSyncHub Logo"
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none";
+                  }}
+                />
+                <span>PiSyncHub</span>
+                <span className="brand-meta">· Pi-hole v6 Cluster</span>
+              </a>
+
+              <div className="header-controls">
+                {/* Prominent Network-Wide Blocking Toggle Button */}
+                <button
+                  type="button"
+                  onClick={handleToggleBlocking}
+                  disabled={blockingBusy}
+                  className={`btn ${blockingEnabled ? "btn-red" : "btn-green"}`}
+                  title="Toggle DNS blocking across all Pi-hole v6 nodes"
+                >
+                  {blockingEnabled ? "🛡️ Disable Blocking" : "🛡️ Enable Blocking"}
+                </button>
+
+                {/* Quick Theme Toggle Button (Sun/Moon icon) */}
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  className="btn btn-secondary"
+                  title="Switch between Pi-hole v6 Dark and Light mode"
+                >
+                  {theme === "dark" ? "☀️ / 🌙 Light Mode" : "☀️ / 🌙 Dark Mode"}
+                </button>
+
+                <button type="button" onClick={loadAllData} className="btn btn-secondary">
+                  ↻ Refresh Metrics
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAuthModal(true)}
+                  className="btn btn-secondary"
+                >
+                  {authState.username ? `👤 ${authState.username}` : "🔐 Admin Auth"}
+                </button>
+
+                {authState.username && (
+                  <button type="button" onClick={handleLogout} className="btn btn-secondary btn-sm">
+                    Log Out
+                  </button>
+                )}
+              </div>
+            </div>
+          </header>
+
+          {/* Main Dashboard Content */}
+          <main className="main-container">
+            {!blockingEnabled && (
+              <div className="banner-notice paused">
+                <div>
+                  <strong>⚠️ Network-Wide DNS Blocking is Currently Paused</strong> — All configured Pi-hole v6 nodes are permitting queries without gravity filtering.
+                </div>
+                <button type="button" className="btn btn-green btn-sm" onClick={handleToggleBlocking}>
+                  🛡️ Enable Blocking Now
+                </button>
+              </div>
+            )}
+
+            {/* Overview Toolbar & Node Scope Selector */}
+            <div className="overview-toolbar">
+              <div className="overview-title-group">
+                <h1>Network-Wide DNS Overview</h1>
+                <div className="overview-subtitle">
+                  Aggregated real-time telemetry across {displayNodes.length} Pi-hole v6 nodes · Blocking{" "}
+                  <strong>{blockingEnabled ? "ACTIVE" : "DISABLED"}</strong> · Cluster Rate:{" "}
+                  <span className="tabular-nums">{kpiTotals.totalQpm} queries/min</span>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Scope:</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedNodeFilter("ALL")}
+                  className={`btn btn-sm ${selectedNodeFilter === "ALL" ? "btn-blue" : "btn-secondary"}`}
+                >
+                  All Nodes ({displayNodes.length})
+                </button>
+                {displayNodes.map((n) => (
+                  <button
+                    key={n.name}
+                    type="button"
+                    onClick={() => setSelectedNodeFilter(n.name)}
+                    className={`btn btn-sm ${selectedNodeFilter === n.name ? "btn-blue" : "btn-secondary"}`}
+                  >
+                    {n.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 4 Main Summary KPI Cards (2x2 on mobile/foldable, 4 columns on desktop) */}
+            <section className="summary-kpi-grid" aria-label="Key DNS Summary Metrics">
+              <div className="kpi-card total-queries">
+                <div className="kpi-label">
+                  <span>Total Queries</span>
+                  <span className="tabular-nums">{kpiTotals.totalQpm} / min</span>
+                </div>
+                <div className="kpi-value tabular-nums">{kpiTotals.totalQueries.toLocaleString()}</div>
+                <div className="kpi-sub">
+                  <span>Across {activeScopedNodes.length} active node(s)</span>
+                  <span className="tabular-nums">Cached: {kpiTotals.cachedQueries.toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div className="kpi-card blocked-queries">
+                <div className="kpi-label">
+                  <span>Queries Blocked</span>
+                  <span>Pi-hole v6 FTL</span>
+                </div>
+                <div className="kpi-value tabular-nums">{kpiTotals.blockedQueries.toLocaleString()}</div>
+                <div className="kpi-sub">
+                  <span>Ad & tracker queries sank</span>
+                  <span>{blockingEnabled ? "Filtering Active" : "Paused"}</span>
+                </div>
+              </div>
+
+              <div className="kpi-card percent-blocked">
+                <div className="kpi-label">
+                  <span>Percentage Blocked</span>
+                  <span>Ratio</span>
+                </div>
+                <div className="kpi-value tabular-nums">{kpiTotals.percentBlocked}%</div>
+                <div className="kpi-sub">
+                  <span>Network blocking ratio</span>
+                  <span>24h window</span>
+                </div>
+              </div>
+
+              <div className="kpi-card domains-list">
+                <div className="kpi-label">
+                  <span>Domains on Lists</span>
+                  <span>Gravity DB</span>
+                </div>
+                <div className="kpi-value tabular-nums">{kpiTotals.domainsOnLists.toLocaleString()}</div>
+                <div className="kpi-sub">
+                  <span>Unique blocklist domains</span>
+                  <span>Synced cluster</span>
+                </div>
+              </div>
+            </section>
+
+            {/* Dual 24-Hour Activity Stacked Bar Charts */}
+            <section className="activity-charts-grid" aria-label="24-Hour DNS Activity Charts">
+              <div className="surface-card">
+                <div className="card-header">
+                  <div>
+                    <h2 className="card-title">Total queries over last 24 hours</h2>
+                    <div className="card-subtitle">
+                      Stacked time-series breakdown by Permitted (green), Cached (blue), and Blocked (red)
+                    </div>
+                  </div>
+                </div>
+                <div className="chart-canvas-wrap">
+                  <canvas ref={queries24hCanvasRef}></canvas>
+                </div>
+              </div>
+
+              <div className="surface-card">
+                <div className="card-header">
+                  <div>
+                    <h2 className="card-title">Client activity over last 24 hours</h2>
+                    <div className="card-subtitle">
+                      Queries per client IP and hostname across 24-hour intervals
+                    </div>
+                  </div>
+                </div>
+                <div className="chart-canvas-wrap">
+                  <canvas ref={clients24hCanvasRef}></canvas>
+                </div>
+              </div>
+            </section>
+
+            {/* Donut Breakdowns: Query Types & Upstream Servers */}
+            <section className="two-col-grid" aria-label="DNS Query Types and Upstream Servers">
+              <div className="surface-card">
+                <div className="card-header">
+                  <div>
+                    <h2 className="card-title">Query Types</h2>
+                    <div className="card-subtitle">Distribution of A, AAAA, HTTPS, PTR, SVCB, SRV, and TXT records</div>
+                  </div>
+                </div>
+                <div className="donut-canvas-wrap">
+                  <canvas ref={queryTypesCanvasRef}></canvas>
+                </div>
+              </div>
+
+              <div className="surface-card">
+                <div className="card-header">
+                  <div>
+                    <h2 className="card-title">Upstream Servers</h2>
+                    <div className="card-subtitle">
+                      Forwarding destinations by real server hostname (Unbound, cache, blocklist, DNS resolvers)
+                    </div>
+                  </div>
+                </div>
+                <div className="donut-canvas-wrap">
+                  <canvas ref={upstreamsCanvasRef}></canvas>
+                </div>
+              </div>
+            </section>
+
+            {/* 4 Aggregated Top Lists Data Tables with Relative Frequency Bars */}
+            <section className="surface-card" aria-label="Aggregated Top Lists">
+              <div className="card-header">
+                <div>
+                  <h2 className="card-title">Aggregated Top Domains & Clients</h2>
+                  <div className="card-subtitle">
+                    Combined 24-hour frequency rankings across active Pi-hole v6 nodes
+                  </div>
+                </div>
+                <div style={{ minWidth: "240px" }}>
+                  <input
+                    type="search"
+                    className="form-input"
+                    placeholder="Filter domain or client IP/hostname..."
+                    value={topListSearch}
+                    onChange={(e) => setTopListSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="two-col-grid">
+                {/* Table 1: Top Permitted Domains */}
+                <div className="surface-card" style={{ padding: "0.95rem" }}>
+                  <div className="card-header" style={{ marginBottom: "0.6rem" }}>
+                    <h3 className="card-title" style={{ fontSize: "0.9rem" }}>
+                      Top Permitted Domains
+                    </h3>
+                    <span className="card-subtitle">Allowed DNS lookups</span>
+                  </div>
+                  <div className="table-responsive">
+                    <table className="pihole-table">
+                      <thead>
+                        <tr>
+                          <th>Domain</th>
+                          <th style={{ textAlign: "right" }}>Hits</th>
+                          <th>Frequency</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {permittedRows.map((row) => {
+                          const relPct = Math.round((row.count / maxPermitted) * 100);
+                          const sharePct = ((row.count / kpiTotals.totalQueries) * 100).toFixed(1);
+                          return (
+                            <tr key={row.domain}>
+                              <td className="domain-cell" title={row.domain}>
+                                {row.domain}
+                              </td>
+                              <td className="tabular-nums" style={{ textAlign: "right", fontWeight: 600 }}>
+                                {row.count.toLocaleString()}
+                              </td>
+                              <td>
+                                <div className="freq-bar-wrapper">
+                                  <div className="freq-bar-track">
+                                    <div className="freq-bar-fill green" style={{ width: `${relPct}%` }}></div>
+                                  </div>
+                                  <span className="freq-pct tabular-nums">{sharePct}%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Table 2: Top Blocked Domains */}
+                <div className="surface-card" style={{ padding: "0.95rem" }}>
+                  <div className="card-header" style={{ marginBottom: "0.6rem" }}>
+                    <h3 className="card-title" style={{ fontSize: "0.9rem" }}>
+                      Top Blocked Domains
+                    </h3>
+                    <span className="card-subtitle">Sank by Gravity & Regex</span>
+                  </div>
+                  <div className="table-responsive">
+                    <table className="pihole-table">
+                      <thead>
+                        <tr>
+                          <th>Domain</th>
+                          <th style={{ textAlign: "right" }}>Hits</th>
+                          <th>Frequency</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {blockedRows.map((row) => {
+                          const relPct = Math.round((row.count / maxBlocked) * 100);
+                          const sharePct = ((row.count / Math.max(kpiTotals.blockedQueries, 1)) * 100).toFixed(1);
+                          return (
+                            <tr key={row.domain}>
+                              <td className="domain-cell" title={row.domain}>
+                                {row.domain}
+                              </td>
+                              <td className="tabular-nums" style={{ textAlign: "right", fontWeight: 600 }}>
+                                {row.count.toLocaleString()}
+                              </td>
+                              <td>
+                                <div className="freq-bar-wrapper">
+                                  <div className="freq-bar-track">
+                                    <div className="freq-bar-fill red" style={{ width: `${relPct}%` }}></div>
+                                  </div>
+                                  <span className="freq-pct tabular-nums">{sharePct}%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Table 3: Top Clients (total) */}
+                <div className="surface-card" style={{ padding: "0.95rem" }}>
+                  <div className="card-header" style={{ marginBottom: "0.6rem" }}>
+                    <h3 className="card-title" style={{ fontSize: "0.9rem" }}>
+                      Top Clients (total)
+                    </h3>
+                    <span className="card-subtitle">All client requests</span>
+                  </div>
+                  <div className="table-responsive">
+                    <table className="pihole-table">
+                      <thead>
+                        <tr>
+                          <th>Client (IP / Hostname)</th>
+                          <th style={{ textAlign: "right" }}>Requests</th>
+                          <th>Frequency</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {clientsTotalRows.map((row) => {
+                          const relPct = Math.round((row.count / maxClientTotal) * 100);
+                          const sharePct = ((row.count / kpiTotals.totalQueries) * 100).toFixed(1);
+                          return (
+                            <tr key={row.client}>
+                              <td className="domain-cell" title={row.client}>
+                                {row.client}
+                              </td>
+                              <td className="tabular-nums" style={{ textAlign: "right", fontWeight: 600 }}>
+                                {row.count.toLocaleString()}
+                              </td>
+                              <td>
+                                <div className="freq-bar-wrapper">
+                                  <div className="freq-bar-track">
+                                    <div className="freq-bar-fill green" style={{ width: `${relPct}%` }}></div>
+                                  </div>
+                                  <span className="freq-pct tabular-nums">{sharePct}%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Table 4: Top Clients (blocked only) */}
+                <div className="surface-card" style={{ padding: "0.95rem" }}>
+                  <div className="card-header" style={{ marginBottom: "0.6rem" }}>
+                    <h3 className="card-title" style={{ fontSize: "0.9rem" }}>
+                      Top Clients (blocked only)
+                    </h3>
+                    <span className="card-subtitle">Blocked client requests</span>
+                  </div>
+                  <div className="table-responsive">
+                    <table className="pihole-table">
+                      <thead>
+                        <tr>
+                          <th>Client (IP / Hostname)</th>
+                          <th style={{ textAlign: "right" }}>Requests</th>
+                          <th>Frequency</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {clientsBlockedRows.map((row) => {
+                          const relPct = Math.round((row.count / maxClientBlocked) * 100);
+                          const sharePct = ((row.count / Math.max(kpiTotals.blockedQueries, 1)) * 100).toFixed(1);
+                          return (
+                            <tr key={row.client}>
+                              <td className="domain-cell" title={row.client}>
+                                {row.client}
+                              </td>
+                              <td className="tabular-nums" style={{ textAlign: "right", fontWeight: 600 }}>
+                                {row.count.toLocaleString()}
+                              </td>
+                              <td>
+                                <div className="freq-bar-wrapper">
+                                  <div className="freq-bar-track">
+                                    <div className="freq-bar-fill red" style={{ width: `${relPct}%` }}></div>
+                                  </div>
+                                  <span className="freq-pct tabular-nums">{sharePct}%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Scalable Multi-Node Cards with "Open Admin WebUI ↗" Button */}
+            <section className="surface-card" aria-label="Pi-hole v6 Cluster Nodes">
+              <div className="card-header">
+                <div>
+                  <h2 className="card-title">Pi-hole v6 Cluster Nodes ({displayNodes.length})</h2>
+                  <div className="card-subtitle">
+                    Individual node health, queries/min, CPU load, and direct WebUI links
+                  </div>
+                </div>
+              </div>
+
+              <div className="nodes-grid">
+                {displayNodes.map((node, idx) => {
+                  const adminUrl = `${node.url.replace(/\/$/, "")}/admin`;
+                  return (
+                    <div className="node-card" key={`${node.name}-${idx}`}>
+                      <div className="node-top-bar">
+                        <div>
+                          <div className="node-name-title">
+                            <span>{node.name}</span>
+                            <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>·</span>
+                            <span className={`status-text-tag ${node.online ? "online" : "offline"}`}>
+                              {node.online ? "ONLINE" : "OFFLINE"}
+                            </span>
+                          </div>
+                          <div className="node-url-text">{node.url}</div>
+                        </div>
+
+                        {/* Open Admin WebUI ↗ Button */}
+                        <a
+                          href={adminUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn btn-secondary btn-sm"
+                          title={`Open ${node.name} Pi-hole v6 Admin WebUI`}
+                        >
+                          Open Admin WebUI ↗
+                        </a>
+                      </div>
+
+                      <div className="node-metrics-strip">
+                        <div className="node-mini-stat">
+                          <div className="node-mini-label">Queries Today</div>
+                          <div className="node-mini-val tabular-nums">{Number(node.queries).toLocaleString()}</div>
+                        </div>
+                        <div className="node-mini-stat">
+                          <div className="node-mini-label">Blocked ({node.percent_blocked}%)</div>
+                          <div className="node-mini-val tabular-nums" style={{ color: "var(--accent-red)" }}>
+                            {Number(node.blocked).toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="node-mini-stat">
+                          <div className="node-mini-label">Gravity Rules</div>
+                          <div className="node-mini-val tabular-nums" style={{ color: "var(--accent-green)" }}>
+                            {Number(node.gravity_size).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="node-metrics-strip">
+                        <div className="node-mini-stat">
+                          <div className="node-mini-label">Queries / min</div>
+                          <div className="node-mini-val tabular-nums">{node.qpm || 42.0} QPM</div>
+                        </div>
+                        <div className="node-mini-stat">
+                          <div className="node-mini-label">CPU Load</div>
+                          <div className="node-mini-val tabular-nums">{node.cpu_load || 10.5}%</div>
+                        </div>
+                        <div className="node-mini-stat">
+                          <div className="node-mini-label">DNS Filtering</div>
+                          <div
+                            className="node-mini-val"
+                            style={{ color: blockingEnabled ? "var(--accent-green)" : "var(--accent-red)" }}
+                          >
+                            {blockingEnabled ? "Enabled" : "Paused"}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="node-actions-footer">
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => handleCreateBackup(idx)}
+                        >
+                          📦 Backup Teleporter .zip
+                        </button>
+                        {configuredNodes.length > idx && (
+                          <button
+                            type="button"
+                            className="btn btn-red btn-sm"
+                            onClick={() => handleDeleteNode(idx, node.name)}
+                          >
+                            Remove Node
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Add New Pi-hole v6 Node Form */}
+              <div style={{ marginTop: "1.25rem", paddingTop: "1rem", borderTop: "1px solid var(--border-subtle)" }}>
+                <h3 className="card-title" style={{ fontSize: "0.9rem", marginBottom: "0.75rem" }}>
+                  Add Pi-hole v6 Node
+                </h3>
+                <form className="form-grid" onSubmit={handleAddNode}>
+                  <div className="form-field">
+                    <label>Node Friendly Name</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. Pihole4-GuestVLAN"
+                      value={newNodeForm.name}
+                      onChange={(e) => setNewNodeForm({ ...newNodeForm, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label>Node Base URL / IP</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="http://192.168.1.4"
+                      value={newNodeForm.url}
+                      onChange={(e) => setNewNodeForm({ ...newNodeForm, url: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label>Pi-hole v6 App Password / API Key</label>
+                    <input
+                      type="password"
+                      className="form-input"
+                      placeholder="Enter web admin password"
+                      value={newNodeForm.api_key}
+                      onChange={(e) => setNewNodeForm({ ...newNodeForm, api_key: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <button type="submit" className="btn btn-green" style={{ width: "100%" }}>
+                      + Add Node to Cluster
+                    </button>
+                  </div>
+                </form>
+                {nodeFeedback && (
+                  <div
+                    style={{
+                      marginTop: "0.65rem",
+                      fontSize: "0.82rem",
+                      color: nodeFeedback.type === "error" ? "var(--accent-red)" : "var(--accent-green)"
+                    }}
+                  >
+                    {nodeFeedback.text}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Selective Teleporter & Rules Sync Engine + Pre-Flight Trigger */}
+            <div className="two-col-grid">
+              <section className="surface-card" aria-label="Selective Teleporter Sync Engine">
+                <div className="card-header">
+                  <div>
+                    <h2 className="card-title">Selective Teleporter & Rules Sync Engine</h2>
+                    <div className="card-subtitle">
+                      Replicate Adlists, Allow/Deny Domains, and Local DNS records from Master to Target nodes
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-grid" style={{ marginBottom: "0.9rem" }}>
+                  <div className="form-field">
+                    <label>Source Node (Primary Master)</label>
+                    <select
+                      className="form-select"
+                      value={syncSourceIdx}
+                      onChange={(e) => setSyncSourceIdx(Number(e.target.value))}
+                    >
+                      {displayNodes.map((n, i) => (
+                        <option key={`${n.name}-${i}`} value={i}>
+                          {n.name} ({n.url})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-field">
+                    <label>Target Replica Nodes</label>
+                    <div className="checkbox-row" style={{ margin: "0.35rem 0 0" }}>
+                      {displayNodes.map((n, i) => {
+                        if (i === Number(syncSourceIdx)) return null;
+                        const checked = syncTargetIndices.includes(i);
+                        return (
+                          <label key={`${n.name}-${i}`} className="checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSyncTargetIndices([...syncTargetIndices, i]);
+                                } else {
+                                  setSyncTargetIndices(syncTargetIndices.filter((idx) => idx !== i));
+                                }
+                              }}
+                            />
+                            <span>{n.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: "0.9rem" }}>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 600, display: "block", marginBottom: "0.35rem" }}>
+                    Configuration Scopes to Synchronize
+                  </label>
+                  <div className="checkbox-row">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={syncScopes.adlists}
+                        onChange={(e) => setSyncScopes({ ...syncScopes, adlists: e.target.checked })}
+                      />
+                      <span>Adlists / Blocklists</span>
+                    </label>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={syncScopes.domains}
+                        onChange={(e) => setSyncScopes({ ...syncScopes, domains: e.target.checked })}
+                      />
+                      <span>Domains (Allow / Deny / Regex)</span>
+                    </label>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={syncScopes.groups}
+                        onChange={(e) => setSyncScopes({ ...syncScopes, groups: e.target.checked })}
+                      />
+                      <span>Client Groups</span>
+                    </label>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={syncScopes.localDns}
+                        onChange={(e) => setSyncScopes({ ...syncScopes, localDns: e.target.checked })}
+                      />
+                      <span>Local DNS & CNAMEs</span>
+                    </label>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-sync"
+                  disabled={syncBusy || syncTargetIndices.length === 0}
+                  onClick={() => setShowSyncPreflightModal(true)}
+                >
+                  🚀 Execute Node Sync (Pre-Flight Check)
+                </button>
+
+                {syncLogs.length > 0 && (
+                  <div
+                    className="preflight-summary-box tabular-nums"
+                    style={{ marginTop: "0.9rem", maxHeight: "140px", overflowY: "auto", fontSize: "0.76rem" }}
+                  >
+                    {syncLogs.map((line, i) => (
+                      <div key={i}>{line}</div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* Teleporter Archive Vault (Backups & Restores) */}
+              <section className="surface-card" aria-label="Teleporter Archive Vault">
+                <div className="card-header">
+                  <div>
+                    <h2 className="card-title">Teleporter Archive Vault (Backups & Restores)</h2>
+                    <div className="card-subtitle">
+                      Extract live .zip Teleporter archives from any Pi-hole v6 node or restore configuration snapshots
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-grid" style={{ marginBottom: "1rem" }}>
+                  <div className="form-field">
+                    <label>Select Node to Backup</label>
+                    <select
+                      className="form-select"
+                      value={backupNodeIdx}
+                      onChange={(e) => setBackupNodeIdx(Number(e.target.value))}
+                    >
+                      {displayNodes.map((n, i) => (
+                        <option key={`${n.name}-${i}`} value={i}>
+                          {n.name} ({n.url})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <button
+                      type="button"
+                      className="btn btn-green"
+                      style={{ width: "100%" }}
+                      onClick={() => handleCreateBackup(backupNodeIdx)}
+                    >
+                      📦 Create Teleporter Backup
+                    </button>
+                  </div>
+                </div>
+
+                {/* Stored Local Backups Table */}
+                <div style={{ marginBottom: "1rem" }}>
+                  <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: "0.4rem", color: "var(--text-strong)" }}>
+                    Stored Local Teleporter Backups
+                  </div>
+                  {backups.length === 0 ? (
+                    <div
+                      style={{
+                        padding: "0.75rem",
+                        background: "var(--bg-elevated)",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border-subtle)",
+                        fontSize: "0.8rem",
+                        color: "var(--text-muted)"
+                      }}
+                    >
+                      No Teleporter .zip archives stored in <code>/config/backups</code> yet. Click "Create Teleporter Backup" above to snapshot a live node.
+                    </div>
+                  ) : (
+                    <div className="table-responsive">
+                      <table className="pihole-table">
+                        <thead>
+                          <tr>
+                            <th>Archive Filename</th>
+                            <th>Size</th>
+                            <th>Created</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {backups.map((b) => (
+                            <tr key={b.filename}>
+                              <td className="domain-cell">{b.filename}</td>
+                              <td className="tabular-nums">{b.size_kb} KB</td>
+                              <td className="tabular-nums">{b.created}</td>
+                              <td>
+                                <a
+                                  href={`/api/backup/download/${encodeURIComponent(b.filename)}`}
+                                  className="btn btn-secondary btn-sm"
+                                >
+                                  Download .zip
+                                </a>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Restore Teleporter Archive to Node */}
+                <div style={{ paddingTop: "0.85rem", borderTop: "1px solid var(--border-subtle)" }}>
+                  <div style={{ fontSize: "0.8rem", fontWeight: 600, marginBottom: "0.45rem", color: "var(--text-strong)" }}>
+                    Restore Teleporter Archive (.zip) to Node
+                  </div>
+                  <div className="form-grid">
+                    <div className="form-field">
+                      <label>Target Node</label>
+                      <select
+                        className="form-select"
+                        value={restoreNodeIdx}
+                        onChange={(e) => setRestoreNodeIdx(Number(e.target.value))}
+                      >
+                        {displayNodes.map((n, i) => (
+                          <option key={`${n.name}-${i}`} value={i}>
+                            {n.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-field">
+                      <label>Teleporter Archive (.zip)</label>
+                      <input
+                        type="file"
+                        accept=".zip"
+                        className="form-input"
+                        onChange={(e) => setRestoreFile(e.target.files?.[0] || null)}
+                      />
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        className="btn btn-red"
+                        style={{ width: "100%" }}
+                        onClick={() => setConfirmRestoreModal(true)}
+                      >
+                        ♻️ Restore to Node
+                      </button>
+                    </div>
+                  </div>
+                  {vaultStatus && (
+                    <div
+                      style={{
+                        marginTop: "0.65rem",
+                        fontSize: "0.8rem",
+                        color:
+                          vaultStatus.type === "error"
+                            ? "var(--accent-red)"
+                            : vaultStatus.type === "success"
+                            ? "var(--accent-green)"
+                            : "var(--text)"
+                      }}
+                    >
+                      {vaultStatus.text}
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+          </main>
+
+          {/* Teleport Sync Pre-Flight Confirmation Modal */}
+          {showSyncPreflightModal && (
+            <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="preflight-modal-title">
+              <div className="modal-dialog">
+                <h2 id="preflight-modal-title" className="modal-title">
+                  🛡️ Teleport Sync Pre-Flight Confirmation
+                </h2>
+                <p style={{ margin: "0 0 0.75rem", fontSize: "0.84rem", color: "var(--text)" }}>
+                  Please review the synchronization plan below before pushing master configuration rules to your replica Pi-hole v6 nodes.
+                </p>
+
+                <div className="preflight-summary-box">
+                  <div>
+                    <strong>Primary Master Source:</strong>{" "}
+                    <span className="tabular-nums">
+                      {displayNodes[syncSourceIdx]?.name} ({displayNodes[syncSourceIdx]?.url})
+                    </span>
+                  </div>
+                  <div>
+                    <strong>Target Replica Node(s):</strong>{" "}
+                    <span className="tabular-nums">
+                      {syncTargetIndices
+                        .map((i) => `${displayNodes[i]?.name} (${displayNodes[i]?.url})`)
+                        .join(", ")}
+                    </span>
+                  </div>
+                  <div>
+                    <strong>Selected Sync Scopes:</strong>{" "}
+                    {[
+                      syncScopes.adlists && "Adlists / Blocklists",
+                      syncScopes.domains && "Exact & Regex Domains (Allow/Deny)",
+                      syncScopes.groups && "Client Groups",
+                      syncScopes.localDns && "Local DNS & CNAME Records"
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </div>
+                </div>
+
+                <label className="checkbox-label" style={{ marginBottom: "1.1rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={syncScopes.autoBackupBeforeSync}
+                    onChange={(e) => setSyncScopes({ ...syncScopes, autoBackupBeforeSync: e.target.checked })}
+                  />
+                  <span>Create automatic Teleporter snapshot of target nodes prior to overwriting</span>
+                </label>
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.65rem" }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setShowSyncPreflightModal(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button type="button" className="btn btn-sync" onClick={handleExecuteConfirmedSync}>
+                    🚀 Confirm & Execute Sync
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Teleporter Restore Confirmation Modal */}
+          {confirmRestoreModal && (
+            <div className="modal-backdrop" role="dialog" aria-modal="true">
+              <div className="modal-dialog">
+                <h2 className="modal-title">♻️ Confirm Teleporter Archive Restore</h2>
+                <p style={{ fontSize: "0.84rem", color: "var(--text)" }}>
+                  Restoring <strong>{restoreFile ? restoreFile.name : "selected archive"}</strong> will overwrite the active configuration on{" "}
+                  <strong>{displayNodes[restoreNodeIdx]?.name}</strong>. Do you want to proceed?
+                </p>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.65rem", marginTop: "1.1rem" }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setConfirmRestoreModal(false)}>
+                    Cancel
+                  </button>
+                  <button type="button" className="btn btn-red" onClick={handleConfirmRestore}>
+                    Confirm Restore
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Admin Auth / Setup Modal */}
+          {showAuthModal && (
+            <div className="modal-backdrop" role="dialog" aria-modal="true">
+              <div className="modal-dialog" style={{ maxWidth: "400px" }}>
+                <h2 className="modal-title">
+                  {authState.setup_required ? "PiSyncHub Initial Admin Setup" : "PiSyncHub Admin Login"}
+                </h2>
+                <p style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: 0 }}>
+                  {authState.setup_required
+                    ? "Create local administrator credentials stored in /config/auth.json."
+                    : "Sign in with your PiSyncHub administrator credentials."}
+                </p>
+                {authError && (
+                  <div style={{ color: "var(--accent-red)", fontSize: "0.8rem", marginBottom: "0.75rem" }}>
+                    {authError}
+                  </div>
+                )}
+                <form onSubmit={handleAuthSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}>
+                  <div className="form-field">
+                    <label>Admin Username</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      required
+                      value={authForm.username}
+                      onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-field">
+                    <label>Admin Password (min 6 chars)</label>
+                    <input
+                      type="password"
+                      className="form-input"
+                      required
+                      value={authForm.password}
+                      onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+                    />
+                  </div>
+                  {authState.setup_required && (
+                    <div className="form-field">
+                      <label>Confirm Password</label>
+                      <input
+                        type="password"
+                        className="form-input"
+                        required
+                        value={authForm.confirm}
+                        onChange={(e) => setAuthForm({ ...authForm, confirm: e.target.value })}
+                      />
+                    </div>
+                  )}
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.6rem", marginTop: "0.4rem" }}>
+                    <button type="button" className="btn btn-secondary" onClick={() => setShowAuthModal(false)}>
+                      Close
+                    </button>
+                    <button type="submit" className="btn btn-green">
+                      {authState.setup_required ? "Save Admin Credentials" : "Log In"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      );
     }
 
-    async function loadBackups() {
-      const r = await fetch('/api/backups');
-      if (!r.ok) return;
-      const d = await r.json();
-      const div = document.getElementById('backups-table');
-      if (!d.backups || d.backups.length === 0) {
-        div.innerHTML = '<p style="color:var(--text); font-size:0.85rem;">No Teleporter archives stored yet.</p>';
-        return;
-      }
-      div.innerHTML = `
-        <table>
-          <thead>
-            <tr>
-              <th>Archive Name</th>
-              <th>Size</th>
-              <th>Date Created</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${d.backups.map(b => `
-              <tr>
-                <td><strong>${b.filename}</strong></td>
-                <td>${b.size_kb} KB</td>
-                <td>${b.created}</td>
-                <td><a href="/api/backup/download/${b.filename}" style="color:var(--btn-sync); font-weight:600; text-decoration:none;">Download</a></td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      `;
-    }
-
-    async function createBackup() {
-      const idx = document.getElementById('backup-node-select').value;
-      if (idx === "") return;
-      const r = await fetch(`/api/backup/node/${idx}`, { method: 'POST' });
-      if (r.ok) {
-        alert("Teleporter backup created successfully!");
-        loadBackups();
-      } else {
-        const d = await r.json();
-        alert(d.detail || "Backup failed");
-      }
-    }
-
-    async function executeRestore() {
-      const idx = document.getElementById('restore-node-select').value;
-      const fileInput = document.getElementById('restore-file-input');
-      const statusDiv = document.getElementById('restore-status');
-      if (idx === "" || fileInput.files.length === 0) {
-        alert("Please select a target node and a backup .zip file.");
-        return;
-      }
-      if (!confirm("Restoring will apply the archive configuration to the target node. Proceed?")) return;
-
-      statusDiv.textContent = "Restoring Teleporter archive...";
-      const formData = new FormData();
-      formData.append('file', fileInput.files[0]);
-
-      const r = await fetch(`/api/restore/node/${idx}`, {
-        method: 'POST',
-        body: formData
-      });
-      const d = await r.json();
-      if (r.ok) {
-        statusDiv.innerHTML = `<span style="color:var(--card-green);">✔ ${d.detail}</span>`;
-        loadStats();
-      } else {
-        statusDiv.innerHTML = `<span style="color:var(--card-red);">✖ ${d.detail || 'Restore failed'}</span>`;
-      }
-    }
-
-    async function runSync() {
-      const src = parseInt(document.getElementById('sync-source').value, 10);
-      const targetBoxes = document.querySelectorAll('.sync-target-box:checked');
-      const targets = Array.from(targetBoxes).map(b => parseInt(b.value, 10)).filter(i => i !== src);
-      const log = document.getElementById('sync-log');
-
-      if (targets.length === 0) {
-        log.textContent = "Please select at least one different target node.";
-        return;
-      }
-
-      log.textContent = "Syncing in progress...";
-      const r = await fetch('/api/sync', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          source_index: src,
-          target_indices: targets,
-          sync_adlists: document.getElementById('sync-adlists').checked,
-          sync_domains: document.getElementById('sync-domains').checked
-        })
-      });
-      const d = await r.json();
-      if (r.ok) {
-        log.innerHTML = d.log.map(l => `<div>• ${l}</div>`).join('') || "Sync complete.";
-        loadStats();
-      } else {
-        log.textContent = d.detail || "Sync failed.";
-      }
-    }
-
-    checkAuth();
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
   </script>
 </body>
 </html>

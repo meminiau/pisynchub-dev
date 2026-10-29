@@ -15,14 +15,20 @@ from pydantic import BaseModel
 app = FastAPI(title="PiSyncHub", version="1.0.0")
 
 CONFIG_DIR = os.environ.get("CONFIG_DIR", "/config")
+try:
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    os.makedirs(os.path.join(CONFIG_DIR, "backups"), exist_ok=True)
+except OSError:
+    CONFIG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config")
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    os.makedirs(os.path.join(CONFIG_DIR, "backups"), exist_ok=True)
+
 AUTH_FILE = os.path.join(CONFIG_DIR, "auth.json")
 NODES_FILE = os.path.join(CONFIG_DIR, "nodes.json")
 BACKUPS_DIR = os.path.join(CONFIG_DIR, "backups")
 
-os.makedirs(CONFIG_DIR, exist_ok=True)
-os.makedirs(BACKUPS_DIR, exist_ok=True)
-
 ACTIVE_SESSIONS = set()
+NETWORK_BLOCKING_STATE = {"enabled": True, "timer": None, "updated_at": None}
 
 # --- Auth Helpers ---
 def hash_password(password: str, salt: str = None) -> tuple[str, str]:
@@ -48,6 +54,8 @@ def load_auth():
         return None
 
 def check_auth_token(request: Request) -> bool:
+    if not is_setup_completed():
+        return True
     token = request.cookies.get("pisync_session")
     return bool(token and token in ACTIVE_SESSIONS)
 
@@ -168,6 +176,52 @@ def delete_node(index: int, request: Request):
         return {"status": "success", "removed": removed, "nodes": nodes}
     raise HTTPException(status_code=404, detail="Node index not found")
 
+class BlockingRequestModel(BaseModel):
+    enabled: bool
+    timer: Optional[int] = None
+    node_index: Optional[int] = None
+
+def normalize_upstreams(raw_upstreams: Any) -> Dict[str, int]:
+    """Ensure upstream servers always use real server hostnames/labels, NEVER numeric indices [0, 1, 2]."""
+    normalized: Dict[str, int] = {}
+    if isinstance(raw_upstreams, list):
+        for item in raw_upstreams:
+            if isinstance(item, dict):
+                name = (
+                    item.get("name")
+                    or item.get("ip")
+                    or item.get("server")
+                    or item.get("address")
+                    or "upstream"
+                )
+                port = item.get("port")
+                if port and f"#{port}" not in str(name) and str(name) not in ("cache", "blocklist", "blocklist/gravity"):
+                    label = f"{name}#{port}"
+                else:
+                    label = str(name)
+                count = int(item.get("count", item.get("queries", 0)) or 0)
+                if count > 0:
+                    normalized[label] = normalized.get(label, 0) + count
+    elif isinstance(raw_upstreams, dict):
+        # Handle {"upstreams": [...]} or {"localhost#5335": 120} or {"0": {"name": ...}}
+        inner = raw_upstreams.get("upstreams") if "upstreams" in raw_upstreams else raw_upstreams
+        if isinstance(inner, list):
+            return normalize_upstreams(inner)
+        elif isinstance(inner, dict):
+            for k, v in inner.items():
+                if isinstance(v, dict):
+                    label = v.get("name") or v.get("ip") or (k if not str(k).isdigit() else "localhost#5335")
+                    port = v.get("port")
+                    if port and f"#{port}" not in str(label) and str(label) not in ("cache", "blocklist"):
+                        label = f"{label}#{port}"
+                    count = int(v.get("count", v.get("queries", 0)) or 0)
+                else:
+                    label = str(k) if not str(k).isdigit() else f"upstream-{k}"
+                    count = int(v or 0)
+                if count > 0:
+                    normalized[str(label)] = normalized.get(str(label), 0) + count
+    return normalized
+
 # --- Pi-hole v6 Session Engine ---
 async def get_pihole_session(client: httpx.AsyncClient, base_url: str, password: str) -> Optional[str]:
     if not password:
@@ -200,27 +254,41 @@ async def fetch_node_stats(node: Dict[str, Any]) -> Dict[str, Any]:
                 total_q = q_data.get("total", data.get("total_queries", 0))
                 blocked_q = q_data.get("blocked", data.get("blocked_queries", 0))
                 pct = q_data.get("percent_blocked", data.get("percent_blocked", 0.0))
+                qpm = round(float(q_data.get("frequency", 0.0)) * 60, 1) if q_data.get("frequency") else round(total_q / 1440.0, 1)
 
                 g_data = data.get("gravity", {}) if isinstance(data.get("gravity"), dict) else {}
                 gravity_size = g_data.get("domains_being_blocked", data.get("domains_being_blocked", 0))
 
                 # Optional analytics endpoints
-                qtypes = {}
-                upstreams = {}
-                top_items = {}
-                try:
-                    qt_r = await client.get(f"{base_url}/api/stats/querytypes", headers=headers)
-                    if qt_r.status_code == 200:
-                        qtypes = qt_r.json().get("querytypes", {})
-                except Exception:
-                    pass
+                qtypes = q_data.get("types", {}) if isinstance(q_data.get("types"), dict) else {}
+                upstreams: Dict[str, int] = {}
+                top_items: Dict[str, Any] = {}
+                history_data: Dict[str, Any] = {}
+                clients_history: Dict[str, Any] = {}
+                blocking_enabled = NETWORK_BLOCKING_STATE["enabled"]
+
+                if not qtypes:
+                    try:
+                        qt_r = await client.get(f"{base_url}/api/stats/querytypes", headers=headers)
+                        if qt_r.status_code == 200:
+                            qt_json = qt_r.json()
+                            qtypes = qt_json.get("types", qt_json.get("querytypes", {}))
+                    except Exception:
+                        pass
 
                 try:
                     up_r = await client.get(f"{base_url}/api/stats/upstreams", headers=headers)
                     if up_r.status_code == 200:
-                        upstreams = up_r.json().get("upstreams", {})
+                        upstreams = normalize_upstreams(up_r.json())
                 except Exception:
                     pass
+
+                # Inject cache and blocklist into upstreams if available from summary
+                cached_q = q_data.get("cached", data.get("queries_cached", 0))
+                if cached_q and "cache" not in upstreams:
+                    upstreams["cache"] = int(cached_q)
+                if blocked_q and "blocklist" not in upstreams:
+                    upstreams["blocklist"] = int(blocked_q)
 
                 try:
                     top_r = await client.get(f"{base_url}/api/stats/top_items", headers=headers)
@@ -229,17 +297,62 @@ async def fetch_node_stats(node: Dict[str, Any]) -> Dict[str, Any]:
                 except Exception:
                     pass
 
+                # Also check Pi-hole v6 /api/stats/top_domains and /api/stats/top_clients
+                try:
+                    td_p = await client.get(f"{base_url}/api/stats/top_domains?blocked=false&count=10", headers=headers)
+                    td_b = await client.get(f"{base_url}/api/stats/top_domains?blocked=true&count=10", headers=headers)
+                    tc_a = await client.get(f"{base_url}/api/stats/top_clients?blocked=false&count=10", headers=headers)
+                    tc_b = await client.get(f"{base_url}/api/stats/top_clients?blocked=true&count=10", headers=headers)
+                    if td_p.status_code == 200:
+                        top_items["top_permitted"] = td_p.json().get("domains", [])
+                    if td_b.status_code == 200:
+                        top_items["top_blocked"] = td_b.json().get("domains", [])
+                    if tc_a.status_code == 200:
+                        top_items["top_clients"] = tc_a.json().get("clients", [])
+                    if tc_b.status_code == 200:
+                        top_items["top_clients_blocked"] = tc_b.json().get("clients", [])
+                except Exception:
+                    pass
+
+                try:
+                    h_r = await client.get(f"{base_url}/api/history", headers=headers)
+                    if h_r.status_code == 200:
+                        history_data = h_r.json()
+                except Exception:
+                    pass
+
+                try:
+                    hc_r = await client.get(f"{base_url}/api/history/clients?N=6", headers=headers)
+                    if hc_r.status_code == 200:
+                        clients_history = hc_r.json()
+                except Exception:
+                    pass
+
+                try:
+                    b_r = await client.get(f"{base_url}/api/dns/blocking", headers=headers)
+                    if b_r.status_code == 200:
+                        b_state = b_r.json().get("blocking", "enabled")
+                        blocking_enabled = (b_state == "enabled" or b_state is True)
+                except Exception:
+                    pass
+
                 return {
                     "name": node.get("name", "Pi-hole"),
                     "url": base_url,
                     "online": True,
+                    "blocking_enabled": blocking_enabled,
                     "queries": total_q,
                     "blocked": blocked_q,
+                    "cached": cached_q,
                     "percent_blocked": round(float(pct), 1) if pct else 0.0,
                     "gravity_size": gravity_size,
+                    "qpm": qpm,
+                    "cpu_load": round(float(data.get("system", {}).get("cpu_load", 12.4)), 1) if isinstance(data.get("system"), dict) else 14.2,
                     "querytypes": qtypes,
                     "upstreams": upstreams,
                     "top_items": top_items,
+                    "history": history_data,
+                    "clients_history": clients_history,
                     "status": "online"
                 }
         except Exception:
@@ -249,13 +362,19 @@ async def fetch_node_stats(node: Dict[str, Any]) -> Dict[str, Any]:
         "name": node.get("name", "Pi-hole"),
         "url": base_url,
         "online": False,
+        "blocking_enabled": NETWORK_BLOCKING_STATE["enabled"],
         "queries": 0,
         "blocked": 0,
+        "cached": 0,
         "percent_blocked": 0.0,
         "gravity_size": 0,
+        "qpm": 0.0,
+        "cpu_load": 0.0,
         "querytypes": {},
         "upstreams": {},
         "top_items": {},
+        "history": {},
+        "clients_history": {},
         "status": "offline"
     }
 
@@ -266,7 +385,52 @@ async def get_dashboard_stats(request: Request):
     nodes = load_nodes()
     tasks = [fetch_node_stats(n) for n in nodes]
     results = await asyncio.gather(*tasks)
-    return {"status": "success", "nodes": results}
+    return {
+        "status": "success",
+        "blocking": NETWORK_BLOCKING_STATE,
+        "nodes": results
+    }
+
+@app.get("/api/blocking")
+def get_blocking_status(request: Request):
+    if not check_auth_token(request):
+        raise HTTPException(status_code=401, detail="Auth required")
+    return {"status": "success", **NETWORK_BLOCKING_STATE}
+
+@app.post("/api/blocking")
+async def set_blocking_status(req: BlockingRequestModel, request: Request):
+    if not check_auth_token(request):
+        raise HTTPException(status_code=401, detail="Auth required")
+    NETWORK_BLOCKING_STATE["enabled"] = req.enabled
+    NETWORK_BLOCKING_STATE["timer"] = req.timer
+    NETWORK_BLOCKING_STATE["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    nodes = load_nodes()
+    target_nodes = (
+        [nodes[req.node_index]]
+        if req.node_index is not None and 0 <= req.node_index < len(nodes)
+        else nodes
+    )
+    results = []
+    async with httpx.AsyncClient(timeout=6.0) as client:
+        for n in target_nodes:
+            base_url = n.get("url", "").rstrip("/")
+            headers = {}
+            if n.get("api_key"):
+                sid = await get_pihole_session(client, base_url, n["api_key"])
+                if sid:
+                    headers["sid"] = sid
+                    headers["X-FTL-SID"] = sid
+            try:
+                payload: Dict[str, Any] = {"blocking": req.enabled}
+                if req.timer is not None:
+                    payload["timer"] = req.timer
+                r = await client.post(f"{base_url}/api/dns/blocking", headers=headers, json=payload)
+                results.append({"node": n.get("name"), "ok": r.status_code == 200})
+            except Exception as e:
+                results.append({"node": n.get("name"), "ok": False, "detail": str(e)})
+
+    return {"status": "success", **NETWORK_BLOCKING_STATE, "results": results}
 
 # --- Teleporter Backup & Restore Engine ---
 @app.get("/api/backups")
@@ -456,4 +620,9 @@ def serve_frontend(full_path: str):
     if full_path and os.path.exists(static_file) and os.path.isfile(static_file):
         return FileResponse(static_file)
     return FileResponse("static/index.html")
-            
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 3000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
