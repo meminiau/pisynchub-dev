@@ -2,7 +2,7 @@
 <Container version="2">
   <Name>PiSyncHub-Dev</Name>
   <Repository>ghcr.io.pisynchub:dev</Repository>
-  <Registry>https://github.com/meminiau/pisynchub-dev</Registry>
+  <Repository>ghcr.io/meminiau/pisynchub-dev:latest</Repository>
   <Network>bridge</Network>
   <Privileged>false</Privileged>
   <Support>https://github.com/meminiau/pisynchub-dev/issues</Support>
