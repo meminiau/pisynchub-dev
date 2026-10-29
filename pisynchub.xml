@@ -1,50 +1,19 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>PiSyncHub</Name>
-  <Repository>homerj007/pisynchub:latest</Repository>
-  <Registry>https://hub.docker.com/r/homerj007/pisynchub/</Registry>
+  <Name>PiSyncHub-Dev</Name>
+  <Repository>pisynchub:dev</Repository>
+  <Registry>https://github.com/meminiau/pisynchub-dev</Registry>
   <Network>bridge</Network>
-  <MyIP/>
-  <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/meminiau/pisynchub/issues</Support>
-  <Project>https://github.com/meminiau/pisynchub</Project>
-  <Overview>Unified multi-node dashboard, teleporter vault backup/restore engine, and selective rules synchronization for Pi-hole v6.</Overview>
-  <Category>Network:DNS Status:Beta</Category>
+  <Support>https://github.com/meminiau/pisynchub-dev/issues</Support>
+  <Project>https://github.com/meminiau/pisynchub-dev</Project>
+  <Overview>PiSyncHub is a high-availability sync engine, backup manager, and aggregated telemetry dashboard designed for Pi-hole v6 DNS clusters.</Overview>
+  <Category>Network:DNS Tools:Utilities</Category>
   <WebUI>http://[IP]:[PORT:8085]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/meminiau/pisynchub/main/pisynchub.xml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/meminiau/pisynchub/main/icon.png</Icon>
-  <ExtraParams/>
-  <PostArgs/>
-  <CPUset/>
-  <DateInstalled/>
-  <DonateText/>
-  <DonateLink/>
-  <Description>Unified multi-node dashboard, teleporter vault backup/restore engine, and selective rules synchronization for Pi-hole v6.</Description>
-  <Networking>
-    <Mode>bridge</Mode>
-    <Publish>
-      <Port>
-        <HostPort>8085</HostPort>
-        <ContainerPort>8085</ContainerPort>
-        <Protocol>tcp</Protocol>
-      </Port>
-    </Publish>
-  </Networking>
-  <Data>
-    <Volume>
-      <HostDir>/mnt/user/appdata/pisynchub</HostDir>
-      <ContainerDir>/config</ContainerDir>
-      <Mode>rw</Mode>
-    </Volume>
-  </Data>
-  <Environment>
-    <Variable>
-      <Value>Australia/Sydney</Value>
-      <Name>TZ</Name>
-      <Mode/>
-    </Variable>
-  </Environment>
-  <Config Name="WebUI Port" Target="8085" Default="8085" Mode="tcp" Description="Web interface port" Type="Port" Display="always" Required="true" Mask="false">8085</Config>
-  <Config Name="AppData Storage" Target="/config" Default="/mnt/user/appdata/pisynchub" Mode="rw" Description="Persistent storage for nodes.json and Teleporter backups" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/pisynchub</Config>
+  <TemplateURL>https://raw.githubusercontent.com/meminiau/pisynchub-dev/main/pisynchub.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/meminiau/pisynchub-dev/main/icon.png</Icon>
+  <Config Name="WebUI Port" Target="8085" Default="8085" Mode="tcp" Description="Web interface port." Type="Port" Display="always" Required="true" Mask="false">8085</Config>
+  <Config Name="Config Storage Path" Target="/config" Default="/mnt/user/appdata/pisynchub-dev" Mode="rw" Description="Host configuration and teleporter backup storage." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/pisynchub-dev</Config>
+  <Config Name="Application Port" Target="PORT" Default="8085" Mode="" Description="Internal application listening port." Type="Variable" Display="advanced" Required="true" Mask="false">8085</Config>
+  <Config Name="Config Directory" Target="CONFIG_DIR" Default="/config" Mode="" Description="Internal container directory for configuration data." Type="Variable" Display="advanced" Required="true" Mask="false">/config</Config>
 </Container>
