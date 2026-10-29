@@ -1,3 +1,4 @@
+import { AuthModal } from './components/AuthModal';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { api } from './services/api';
 import { PiholeNode, BackupItem, ToastNotification } from './types';
@@ -37,7 +38,9 @@ export const App: React.FC = () => {
 
   // Auth state
   const [username, setUsername] = useState<string | null>(null);
-  const [authChecking, setAuthChecking] = useState<boolean>(true);
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
+  const [isSetupMode, setIsSetupMode] = useState<boolean>(false);
+  
 
   // Blocking state
   const [blockingEnabled, setBlockingEnabled] = useState(true);
@@ -545,6 +548,31 @@ export const App: React.FC = () => {
         onClose={() => setIsAddNodeOpen(false)}
         onAdd={handleAddNode}
       />
+
+      <AuthModal
+        isOpen={showAuthModal}
+        isSetup={isSetupMode}
+        onSuccess={(user) => {
+          setUsername(user);
+          setShowAuthModal(false);
+          setIsSetupMode(false);
+          refreshData();
+          addToast({
+            type: 'success',
+            title: isSetupMode ? 'Setup Complete' : 'Authenticated',
+            message: isSetupMode
+              ? `Welcome ${user}! PiSyncHub is now configured.`
+              : `Logged in as ${user}.`,
+          });
+        }}
+      />
+
+      {/* Dynamic Toast Container */}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+    </div>
+  );
+};
+
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
