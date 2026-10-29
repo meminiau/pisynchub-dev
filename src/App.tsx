@@ -1,4 +1,3 @@
-import { AuthModal } from './components/AuthModal';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { api } from './services/api';
 import { PiholeNode, BackupItem, ToastNotification } from './types';
@@ -12,8 +11,9 @@ import { TeleportSync } from './components/TeleportSync';
 import { TeleporterVault } from './components/TeleporterVault';
 import { NodeSettingsDrawer } from './components/NodeSettingsDrawer';
 import { AddNodeModal } from './components/AddNodeModal';
+import { AuthModal } from './components/AuthModal';
 import { ToastContainer } from './components/Toast';
-import { ShieldAlert, Plus, Server, HardDriveDownload } from 'lucide-react';
+import { ShieldAlert, Plus, Server } from 'lucide-react';
 
 export const App: React.FC = () => {
   // Theme state
@@ -36,11 +36,10 @@ export const App: React.FC = () => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  // Auth state
+  // Auth & Setup state
   const [username, setUsername] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [isSetupMode, setIsSetupMode] = useState<boolean>(false);
-  
 
   // Blocking state
   const [blockingEnabled, setBlockingEnabled] = useState(true);
@@ -76,26 +75,6 @@ export const App: React.FC = () => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Check initial Auth & Setup status
-  useEffect(() => {
-    const verifyAuth = async () => {
-      try {
-        const status = await api.getAuthStatus();
-        if (status.authenticated) {
-          setUsername(status.username || 'admin');
-        } else {
-          setUsername(null);
-        }
-      } catch {
-        // Fallback for initial local development
-        setUsername('admin');
-      } finally {
-        setAuthChecking(false);
-      }
-    };
-    verifyAuth();
-  }, []);
-
   // Data loader
   const refreshData = useCallback(async () => {
     try {
@@ -120,11 +99,39 @@ export const App: React.FC = () => {
     }
   }, [addToast]);
 
+  // Initial Auth & Setup Check (Part 3)
   useEffect(() => {
-    refreshData();
-    const interval = setInterval(refreshData, 30000);
-    return () => clearInterval(interval);
+    const checkAuthStatus = async () => {
+      try {
+        const res = await fetch('/api/auth/status');
+        const data = await res.json();
+
+        if (data.setup_required) {
+          setIsSetupMode(true);
+          setShowAuthModal(true);
+          setUsername(null);
+        } else if (!data.logged_in) {
+          setIsSetupMode(false);
+          setShowAuthModal(true);
+          setUsername(null);
+        } else {
+          setShowAuthModal(false);
+          setUsername(data.username || 'admin');
+          refreshData();
+        }
+      } catch {
+        setShowAuthModal(false);
+      }
+    };
+    checkAuthStatus();
   }, [refreshData]);
+
+  useEffect(() => {
+    if (username && !showAuthModal) {
+      const interval = setInterval(refreshData, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [refreshData, username, showAuthModal]);
 
   // Network-wide Blocking Toggle Handler
   const handleToggleBlocking = async () => {
@@ -356,6 +363,8 @@ export const App: React.FC = () => {
         onLogout={() => {
           api.logout();
           setUsername(null);
+          setShowAuthModal(true);
+          setIsSetupMode(false);
           addToast({ type: 'info', title: 'Logged Out', message: 'Admin session closed.' });
         }}
       />
@@ -436,8 +445,8 @@ export const App: React.FC = () => {
           activeNodesCount={activeScopedNodes.length}
         />
 
-        {/* Analytics Section (Only rendered when nodes exist) */}
-        {nodes.length > 0 ? (
+        {/* Analytics Section (Rendered when nodes exist) */}
+        {nodes.length > 0 && (
           <>
             <ActivityCharts theme={theme} />
             <DonutCharts theme={theme} queryTypes={aggQueryTypes} upstreams={aggUpstreams} />
@@ -446,7 +455,7 @@ export const App: React.FC = () => {
               blockedQueries={kpiTotals.blockedQueries}
             />
           </>
-        ) : null}
+        )}
 
         {/* Cluster Nodes Section */}
         <div
@@ -566,13 +575,6 @@ export const App: React.FC = () => {
           });
         }}
       />
-
-      {/* Dynamic Toast Container */}
-      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-    </div>
-  );
-};
-
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
