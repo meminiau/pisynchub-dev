@@ -89,6 +89,13 @@ export interface DashboardStats {
     updated_at?: string | null;
   };
   nodes: PiholeNode[];
+  history?: {
+    labels: string[];
+    permitted: number[];
+    cached: number[];
+    blocked: number[];
+    client_series: Record<string, number[]>;
+  };
 }
 
 export interface ToastNotification {
