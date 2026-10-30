@@ -1,19 +1,20 @@
 import React from 'react';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
+import { PieChart } from 'lucide-react';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 interface DonutChartsProps {
   theme: 'dark' | 'light';
-  queryTypes: Record<string, number>;
-  upstreams: Record<string, number>;
+  queryTypes?: Record<string, number>;
+  upstreams?: Record<string, number>;
 }
 
 export const DonutCharts: React.FC<DonutChartsProps> = ({
   theme,
-  queryTypes,
-  upstreams,
+  queryTypes = {},
+  upstreams = {},
 }) => {
   const isDark = theme === 'dark';
   const textColor = isDark ? '#adbac7' : '#24292f';
@@ -38,10 +39,10 @@ export const DonutCharts: React.FC<DonutChartsProps> = ({
   const qtValues = Object.values(queryTypes);
 
   const queryTypesData = {
-    labels: qtLabels.length > 0 ? qtLabels : ['A (IPv4)', 'AAAA (IPv6)', 'HTTPS', 'PTR'],
+    labels: qtLabels,
     datasets: [
       {
-        data: qtValues.length > 0 ? qtValues : [46200, 21400, 9850, 3420],
+        data: qtValues,
         backgroundColor: [
           '#316dca',
           '#347d39',
@@ -62,10 +63,10 @@ export const DonutCharts: React.FC<DonutChartsProps> = ({
   const upValues = Object.values(cleanUpstreams);
 
   const upstreamsData = {
-    labels: upLabels.length > 0 ? upLabels : fallbackUpstreamLabels.slice(0, 3),
+    labels: upLabels,
     datasets: [
       {
-        data: upValues.length > 0 ? upValues : [43460, 19380, 21450],
+        data: upValues,
         backgroundColor: [
           '#347d39',
           '#316dca',
@@ -97,6 +98,13 @@ export const DonutCharts: React.FC<DonutChartsProps> = ({
     },
   };
 
+  const renderEmptyState = (label: string) => (
+    <div className="flex h-full flex-col items-center justify-center text-center text-[var(--text-muted)] opacity-70">
+      <PieChart className="mb-2 h-6 w-6" />
+      <span className="text-xs">Awaiting real-time {label}...</span>
+    </div>
+  );
+
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       {/* 1. Query Types */}
@@ -109,7 +117,11 @@ export const DonutCharts: React.FC<DonutChartsProps> = ({
           <div className="text-xs text-[var(--text-muted)]">DNS query types breakdown</div>
         </div>
         <div className="h-56 w-full">
-          <Doughnut data={queryTypesData} options={donutOptions} />
+          {qtValues.length > 0 && qtValues.some(v => v > 0) ? (
+            <Doughnut data={queryTypesData} options={donutOptions} />
+          ) : (
+             renderEmptyState('query types')
+          )}
         </div>
       </div>
 
@@ -123,7 +135,11 @@ export const DonutCharts: React.FC<DonutChartsProps> = ({
           <div className="text-xs text-[var(--text-muted)]">Destination forwarders & local caches</div>
         </div>
         <div className="h-56 w-full">
-          <Doughnut data={upstreamsData} options={donutOptions} />
+          {upValues.length > 0 && upValues.some(v => v > 0) ? (
+            <Doughnut data={upstreamsData} options={donutOptions} />
+          ) : (
+            renderEmptyState('upstream servers')
+          )}
         </div>
       </div>
     </div>
