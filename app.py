@@ -6,11 +6,32 @@ import hashlib
 import asyncio
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+from collections import deque
+import logging
+
 import httpx
 from fastapi import FastAPI, Request, Response, HTTPException, UploadFile, File, Form, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
+
+# In-memory circular log buffer to serve container logs directly in the UI
+LOG_BUFFER = deque(maxlen=1000)
+
+class BufferLogHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            LOG_BUFFER.append(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [{record.levelname}] {msg}")
+        except Exception:
+            pass
+
+logger = logging.getLogger("pisynchub")
+logger.setLevel(logging.INFO)
+buffer_handler = BufferLogHandler()
+buffer_handler.setFormatter(logging.Formatter('%(message)s'))
+logger.addHandler(buffer_handler)
+logging.getLogger("uvicorn").addHandler(buffer_handler)
 
 app = FastAPI(title="PiSyncHub", version="1.0.0")
 
@@ -29,6 +50,8 @@ BACKUPS_DIR = os.path.join(CONFIG_DIR, "backups")
 
 ACTIVE_SESSIONS = set()
 NETWORK_BLOCKING_STATE = {"enabled": True, "timer": None, "updated_at": None}
+
+logger.info("PiSyncHub initialized. Storage directory: %s", CONFIG_DIR)
 
 # --- Auth Helpers ---
 def hash_password(password: str, salt: str = None) -> tuple[str, str]:
@@ -55,7 +78,7 @@ def load_auth():
 
 def check_auth_token(request: Request) -> bool:
     if not is_setup_completed():
-        return True
+        return False
     token = request.cookies.get("pisync_session")
     return bool(token and token in ACTIVE_SESSIONS)
 
@@ -87,6 +110,61 @@ class SyncRequestModel(BaseModel):
     target_indices: List[int]
     sync_adlists: bool = True
     sync_domains: bool = True
+    sync_groups: bool = False
+    sync_local_dns: bool = False
+
+class BlockingRequestModel(BaseModel):
+    enabled: bool
+    timer: Optional[int] = None
+    node_index: Optional[int] = None
+
+# --- Pi-hole v6 Session & Helper Engine ---
+async def get_pihole_session(client: httpx.AsyncClient, base_url: str, password: str) -> tuple[dict, Optional[str]]:
+    headers = {}
+    if not password:
+        return headers, None
+    try:
+        r = await client.post(f"{base_url}/api/auth", json={"password": password}, timeout=4.0)
+        if r.status_code == 200:
+            sid = r.json().get("session", {}).get("sid")
+            if sid:
+                headers["sid"] = sid
+                headers["X-FTL-SID"] = sid
+                client.cookies.set("sid", sid)
+                return headers, sid
+    except Exception as e:
+        logger.warning("Auth failure to %s: %s", base_url, e)
+    return headers, None
+
+def normalize_upstreams(raw_upstreams: Any) -> Dict[str, int]:
+    normalized: Dict[str, int] = {}
+    if isinstance(raw_upstreams, list):
+        for item in raw_upstreams:
+            if isinstance(item, dict):
+                name = item.get("name") or item.get("ip") or item.get("server") or item.get("address") or "upstream"
+                port = item.get("port")
+                label = f"{name}#{port}" if (port and f"#{port}" not in str(name) and str(name) not in ("cache", "blocklist")) else str(name)
+                count = int(item.get("count", item.get("queries", 0)) or 0)
+                if count > 0:
+                    normalized[label] = normalized.get(label, 0) + count
+    elif isinstance(raw_upstreams, dict):
+        inner = raw_upstreams.get("upstreams", raw_upstreams)
+        if isinstance(inner, list):
+            return normalize_upstreams(inner)
+        elif isinstance(inner, dict):
+            for k, v in inner.items():
+                if isinstance(v, dict):
+                    label = v.get("name") or v.get("ip") or (k if not str(k).isdigit() else "upstream")
+                    port = v.get("port")
+                    if port and f"#{port}" not in str(label) and str(label) not in ("cache", "blocklist"):
+                        label = f"{label}#{port}"
+                    count = int(v.get("count", v.get("queries", 0)) or 0)
+                else:
+                    label = str(k) if not str(k).isdigit() else f"upstream-{k}"
+                    count = int(v or 0)
+                if count > 0:
+                    normalized[str(label)] = normalized.get(str(label), 0) + count
+    return normalized
 
 # --- Auth Endpoints ---
 @app.get("/api/health")
@@ -96,10 +174,12 @@ def health():
 @app.get("/api/auth/status")
 def auth_status(request: Request):
     auth_data = load_auth()
+    logged_in = check_auth_token(request)
     return {
         "setup_required": not is_setup_completed(),
-        "logged_in": check_auth_token(request),
-        "username": auth_data.get("username") if auth_data and check_auth_token(request) else None
+        "logged_in": logged_in,
+        "authenticated": logged_in,
+        "username": auth_data.get("username") if (auth_data and logged_in) else None
     }
 
 @app.post("/api/auth/setup")
@@ -120,6 +200,7 @@ def auth_setup(creds: AuthModel, response: Response):
     token = secrets.token_hex(32)
     ACTIVE_SESSIONS.add(token)
     response.set_cookie(key="pisync_session", value=token, httponly=True, samesite="lax")
+    logger.info("Admin setup completed for user: %s", user)
     return {"status": "success", "username": user}
 
 @app.post("/api/auth/login")
@@ -134,7 +215,9 @@ def auth_login(creds: AuthModel, response: Response):
             token = secrets.token_hex(32)
             ACTIVE_SESSIONS.add(token)
             response.set_cookie(key="pisync_session", value=token, httponly=True, samesite="lax")
+            logger.info("User logged in: %s", user)
             return {"status": "success", "username": user}
+    logger.warning("Failed login attempt for: %s", user)
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 @app.post("/api/auth/logout")
@@ -144,6 +227,13 @@ def auth_logout(request: Request, response: Response):
         ACTIVE_SESSIONS.remove(token)
     response.delete_cookie("pisync_session")
     return {"status": "success"}
+
+# --- System Logs Endpoint ---
+@app.get("/api/system/logs")
+def get_system_logs(request: Request):
+    if not check_auth_token(request):
+        raise HTTPException(status_code=401, detail="Auth required")
+    return {"status": "success", "logs": list(LOG_BUFFER)}
 
 # --- Node Endpoints ---
 @app.get("/api/nodes")
@@ -163,6 +253,7 @@ def add_node(node: NodeModel, request: Request):
     nodes = load_nodes()
     nodes.append({"name": name, "url": url, "api_key": node.api_key.strip()})
     save_nodes(nodes)
+    logger.info("Added node: %s (%s)", name, url)
     return {"status": "success", "nodes": nodes}
 
 @app.delete("/api/nodes/{index}")
@@ -173,79 +264,121 @@ def delete_node(index: int, request: Request):
     if 0 <= index < len(nodes):
         removed = nodes.pop(index)
         save_nodes(nodes)
+        logger.info("Deleted node: %s", removed.get("name"))
         return {"status": "success", "removed": removed, "nodes": nodes}
     raise HTTPException(status_code=404, detail="Node index not found")
 
-class BlockingRequestModel(BaseModel):
-    enabled: bool
-    timer: Optional[int] = None
-    node_index: Optional[int] = None
+# --- Manage Node Configuration Endpoints (Fixes SyntaxError) ---
+@app.get("/api/nodes/{index}/config")
+async def get_node_config(index: int, request: Request):
+    if not check_auth_token(request):
+        raise HTTPException(status_code=401, detail="Auth required")
+    nodes = load_nodes()
+    if index < 0 or index >= len(nodes):
+        raise HTTPException(status_code=404, detail="Node index not found")
+    node = nodes[index]
+    base_url = node.get("url", "").rstrip("/")
+    password = node.get("api_key", "")
 
-def normalize_upstreams(raw_upstreams: Any) -> Dict[str, int]:
-    """Ensure upstream servers always use real server hostnames/labels, NEVER numeric indices [0, 1, 2]."""
-    normalized: Dict[str, int] = {}
-    if isinstance(raw_upstreams, list):
-        for item in raw_upstreams:
-            if isinstance(item, dict):
-                name = (
-                    item.get("name")
-                    or item.get("ip")
-                    or item.get("server")
-                    or item.get("address")
-                    or "upstream"
-                )
-                port = item.get("port")
-                if port and f"#{port}" not in str(name) and str(name) not in ("cache", "blocklist", "blocklist/gravity"):
-                    label = f"{name}#{port}"
-                else:
-                    label = str(name)
-                count = int(item.get("count", item.get("queries", 0)) or 0)
-                if count > 0:
-                    normalized[label] = normalized.get(label, 0) + count
-    elif isinstance(raw_upstreams, dict):
-        # Handle {"upstreams": [...]} or {"localhost#5335": 120} or {"0": {"name": ...}}
-        inner = raw_upstreams.get("upstreams") if "upstreams" in raw_upstreams else raw_upstreams
-        if isinstance(inner, list):
-            return normalize_upstreams(inner)
-        elif isinstance(inner, dict):
-            for k, v in inner.items():
-                if isinstance(v, dict):
-                    label = v.get("name") or v.get("ip") or (k if not str(k).isdigit() else "localhost#5335")
-                    port = v.get("port")
-                    if port and f"#{port}" not in str(label) and str(label) not in ("cache", "blocklist"):
-                        label = f"{label}#{port}"
-                    count = int(v.get("count", v.get("queries", 0)) or 0)
-                else:
-                    label = str(k) if not str(k).isdigit() else f"upstream-{k}"
-                    count = int(v or 0)
-                if count > 0:
-                    normalized[str(label)] = normalized.get(str(label), 0) + count
-    return normalized
+    adlists = []
+    domains = []
+    upstreams = []
+    dnssec = True
 
-# --- Pi-hole v6 Session Engine ---
-async def get_pihole_session(client: httpx.AsyncClient, base_url: str, password: str) -> Optional[str]:
-    if not password:
-        return None
-    try:
-        r = await client.post(f"{base_url}/api/auth", json={"password": password}, timeout=4.0)
-        if r.status_code == 200:
-            return r.json().get("session", {}).get("sid")
-    except Exception:
-        pass
-    return None
+    async with httpx.AsyncClient(timeout=6.0) as client:
+        headers, _ = await get_pihole_session(client, base_url, password)
+        try:
+            r = await client.get(f"{base_url}/api/lists", headers=headers)
+            if r.status_code == 200:
+                raw_lists = r.json().get("lists", [])
+                adlists = [
+                    {
+                        "id": str(item.get("id", idx)),
+                        "url": item.get("address", ""),
+                        "comment": item.get("comment", ""),
+                        "enabled": item.get("enabled", True),
+                        "domain_count": item.get("number", 0),
+                        "status": "active" if item.get("enabled", True) else "disabled"
+                    }
+                    for idx, item in enumerate(raw_lists)
+                ]
+        except Exception as e:
+            logger.warning("Could not fetch lists from %s: %s", node["name"], e)
 
+        try:
+            r = await client.get(f"{base_url}/api/domains", headers=headers)
+            if r.status_code == 200:
+                raw_domains = r.json().get("domains", [])
+                domains = [
+                    {
+                        "id": str(item.get("id", idx)),
+                        "domain": item.get("domain", ""),
+                        "type": item.get("type", "allow"),
+                        "kind": item.get("kind", "exact"),
+                        "comment": item.get("comment", ""),
+                        "enabled": item.get("enabled", True),
+                        "date_added": item.get("date_added", "")
+                    }
+                    for idx, item in enumerate(raw_domains)
+                ]
+        except Exception as e:
+            logger.warning("Could not fetch domains from %s: %s", node["name"], e)
+
+        try:
+            r = await client.get(f"{base_url}/api/config/dns", headers=headers)
+            if r.status_code == 200:
+                dns_cfg = r.json().get("dns", {})
+                dnssec = dns_cfg.get("dnssec", True)
+                for u in dns_cfg.get("upstreams", []):
+                    upstreams.append({
+                        "id": str(u),
+                        "name": str(u),
+                        "ip": str(u).split("#")[0],
+                        "port": int(str(u).split("#")[1]) if "#" in str(u) else 53,
+                        "enabled": True
+                    })
+        except Exception:
+            pass
+
+    return {
+        "upstreams": upstreams,
+        "dnssec_enabled": dnssec,
+        "conditional_forwarding": False,
+        "domains": domains,
+        "adlists": adlists,
+        "raw_config": {
+            "node_name": node["name"],
+            "base_url": base_url
+        }
+    }
+
+@app.post("/api/nodes/{index}/gravity/update")
+async def update_gravity(index: int, request: Request):
+    if not check_auth_token(request):
+        raise HTTPException(status_code=401, detail="Auth required")
+    nodes = load_nodes()
+    if index < 0 or index >= len(nodes):
+        raise HTTPException(status_code=404, detail="Node index not found")
+    node = nodes[index]
+    base_url = node.get("url", "").rstrip("/")
+    password = node.get("api_key", "")
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        headers, _ = await get_pihole_session(client, base_url, password)
+        try:
+            r = await client.post(f"{base_url}/api/action/gravity", headers=headers)
+            logger.info("Gravity updated on %s", node["name"])
+            return {"status": "success", "detail": f"Gravity updated on {node['name']}", "domains": 0}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to trigger gravity: {str(e)}")
+
+# --- Node Telemetry Poller ---
 async def fetch_node_stats(node: Dict[str, Any]) -> Dict[str, Any]:
     base_url = node.get("url", "").rstrip("/")
     password = node.get("api_key", "")
 
-    async with httpx.AsyncClient(timeout=6.0) as client:
-        headers = {}
-        if password:
-            sid = await get_pihole_session(client, base_url, password)
-            if sid:
-                headers["sid"] = sid
-                headers["X-FTL-SID"] = sid
-
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        headers, _ = await get_pihole_session(client, base_url, password)
         try:
             resp = await client.get(f"{base_url}/api/stats/summary", headers=headers)
             if resp.status_code == 200:
@@ -253,26 +386,23 @@ async def fetch_node_stats(node: Dict[str, Any]) -> Dict[str, Any]:
                 q_data = data.get("queries", {}) if isinstance(data.get("queries"), dict) else data
                 total_q = q_data.get("total", data.get("total_queries", 0))
                 blocked_q = q_data.get("blocked", data.get("blocked_queries", 0))
+                cached_q = q_data.get("cached", data.get("queries_cached", 0))
                 pct = q_data.get("percent_blocked", data.get("percent_blocked", 0.0))
                 qpm = round(float(q_data.get("frequency", 0.0)) * 60, 1) if q_data.get("frequency") else round(total_q / 1440.0, 1)
 
                 g_data = data.get("gravity", {}) if isinstance(data.get("gravity"), dict) else {}
                 gravity_size = g_data.get("domains_being_blocked", data.get("domains_being_blocked", 0))
 
-                # Optional analytics endpoints
                 qtypes = q_data.get("types", {}) if isinstance(q_data.get("types"), dict) else {}
                 upstreams: Dict[str, int] = {}
                 top_items: Dict[str, Any] = {}
-                history_data: Dict[str, Any] = {}
-                clients_history: Dict[str, Any] = {}
                 blocking_enabled = NETWORK_BLOCKING_STATE["enabled"]
 
                 if not qtypes:
                     try:
                         qt_r = await client.get(f"{base_url}/api/stats/querytypes", headers=headers)
                         if qt_r.status_code == 200:
-                            qt_json = qt_r.json()
-                            qtypes = qt_json.get("types", qt_json.get("querytypes", {}))
+                            qtypes = qt_r.json().get("types", {})
                     except Exception:
                         pass
 
@@ -283,21 +413,12 @@ async def fetch_node_stats(node: Dict[str, Any]) -> Dict[str, Any]:
                 except Exception:
                     pass
 
-                # Inject cache and blocklist into upstreams if available from summary
-                cached_q = q_data.get("cached", data.get("queries_cached", 0))
                 if cached_q and "cache" not in upstreams:
                     upstreams["cache"] = int(cached_q)
                 if blocked_q and "blocklist" not in upstreams:
                     upstreams["blocklist"] = int(blocked_q)
 
-                try:
-                    top_r = await client.get(f"{base_url}/api/stats/top_items", headers=headers)
-                    if top_r.status_code == 200:
-                        top_items = top_r.json()
-                except Exception:
-                    pass
-
-                # Also check Pi-hole v6 /api/stats/top_domains and /api/stats/top_clients
+                # Fetch real Top Items
                 try:
                     td_p = await client.get(f"{base_url}/api/stats/top_domains?blocked=false&count=10", headers=headers)
                     td_b = await client.get(f"{base_url}/api/stats/top_domains?blocked=true&count=10", headers=headers)
@@ -311,20 +432,6 @@ async def fetch_node_stats(node: Dict[str, Any]) -> Dict[str, Any]:
                         top_items["top_clients"] = tc_a.json().get("clients", [])
                     if tc_b.status_code == 200:
                         top_items["top_clients_blocked"] = tc_b.json().get("clients", [])
-                except Exception:
-                    pass
-
-                try:
-                    h_r = await client.get(f"{base_url}/api/history", headers=headers)
-                    if h_r.status_code == 200:
-                        history_data = h_r.json()
-                except Exception:
-                    pass
-
-                try:
-                    hc_r = await client.get(f"{base_url}/api/history/clients?N=6", headers=headers)
-                    if hc_r.status_code == 200:
-                        clients_history = hc_r.json()
                 except Exception:
                     pass
 
@@ -347,16 +454,16 @@ async def fetch_node_stats(node: Dict[str, Any]) -> Dict[str, Any]:
                     "percent_blocked": round(float(pct), 1) if pct else 0.0,
                     "gravity_size": gravity_size,
                     "qpm": qpm,
-                    "cpu_load": round(float(data.get("system", {}).get("cpu_load", 12.4)), 1) if isinstance(data.get("system"), dict) else 14.2,
+                    "cpu_load": round(float(data.get("system", {}).get("cpu_load", 5.0)), 1) if isinstance(data.get("system"), dict) else 5.0,
                     "querytypes": qtypes,
                     "upstreams": upstreams,
                     "top_items": top_items,
-                    "history": history_data,
-                    "clients_history": clients_history,
                     "status": "online"
                 }
-        except Exception:
-            pass
+            else:
+                logger.warning("Node %s returned status %d", node.get("name"), resp.status_code)
+        except Exception as e:
+            logger.warning("Node %s offline check: %s", node.get("name"), e)
 
     return {
         "name": node.get("name", "Pi-hole"),
@@ -373,31 +480,29 @@ async def fetch_node_stats(node: Dict[str, Any]) -> Dict[str, Any]:
         "querytypes": {},
         "upstreams": {},
         "top_items": {},
-        "history": {},
-        "clients_history": {},
         "status": "offline"
     }
 
 @app.get("/api/dashboard/stats")
 async def get_dashboard_stats(request: Request):
     if not check_auth_token(request):
-        raise HTTPException(status_code=401, detail="Auth required")
+              raise HTTPException(status_code=401, detail="Auth required")
     nodes = load_nodes()
     tasks = [fetch_node_stats(n) for n in nodes]
-    results = await asyncio.gather(*tasks)
+    results = await asyncio.gather(*tasks) if tasks else []
     return {
         "status": "success",
         "blocking": NETWORK_BLOCKING_STATE,
         "nodes": results
     }
 
-@app.get("/api/blocking")
+@app.get("/api/blocking/status")
 def get_blocking_status(request: Request):
     if not check_auth_token(request):
         raise HTTPException(status_code=401, detail="Auth required")
     return {"status": "success", **NETWORK_BLOCKING_STATE}
 
-@app.post("/api/blocking")
+@app.post("/api/blocking/toggle")
 async def set_blocking_status(req: BlockingRequestModel, request: Request):
     if not check_auth_token(request):
         raise HTTPException(status_code=401, detail="Auth required")
@@ -415,12 +520,7 @@ async def set_blocking_status(req: BlockingRequestModel, request: Request):
     async with httpx.AsyncClient(timeout=6.0) as client:
         for n in target_nodes:
             base_url = n.get("url", "").rstrip("/")
-            headers = {}
-            if n.get("api_key"):
-                sid = await get_pihole_session(client, base_url, n["api_key"])
-                if sid:
-                    headers["sid"] = sid
-                    headers["X-FTL-SID"] = sid
+            headers, _ = await get_pihole_session(client, base_url, n.get("api_key", ""))
             try:
                 payload: Dict[str, Any] = {"blocking": req.enabled}
                 if req.timer is not None:
@@ -448,7 +548,7 @@ def list_backups(request: Request):
             })
     return {"status": "success", "backups": files}
 
-@app.post("/api/backup/node/{index}")
+@app.post("/api/backups/create/{index}")
 async def backup_node(index: int, request: Request):
     if not check_auth_token(request):
         raise HTTPException(status_code=401, detail="Auth required")
@@ -458,13 +558,7 @@ async def backup_node(index: int, request: Request):
     node = nodes[index]
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        headers = {}
-        if node.get("api_key"):
-            sid = await get_pihole_session(client, node["url"], node["api_key"])
-            if sid:
-                headers["sid"] = sid
-                headers["X-FTL-SID"] = sid
-
+        headers, _ = await get_pihole_session(client, node["url"], node.get("api_key", ""))
         try:
             r = await client.get(f"{node['url']}/api/teleporter", headers=headers)
             if r.status_code == 200:
@@ -474,12 +568,13 @@ async def backup_node(index: int, request: Request):
                 dest = os.path.join(BACKUPS_DIR, fname)
                 with open(dest, "wb") as f:
                     f.write(r.content)
+                logger.info("Backup created: %s", fname)
                 return {"status": "success", "filename": fname, "size": len(r.content)}
             raise HTTPException(status_code=r.status_code, detail=f"Pi-hole returned HTTP {r.status_code}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to fetch teleporter archive: {str(e)}")
 
-@app.get("/api/backup/download/{filename}")
+@app.get("/api/backups/download/{filename}")
 def download_backup(filename: str, request: Request):
     if not check_auth_token(request):
         raise HTTPException(status_code=401, detail="Auth required")
@@ -489,35 +584,39 @@ def download_backup(filename: str, request: Request):
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(path, media_type="application/zip", filename=safe_name)
 
-@app.post("/api/restore/node/{index}")
-async def restore_node(index: int, request: Request, file: UploadFile = File(...)):
+@app.post("/api/backups/restore/{index}")
+async def restore_node(index: int, request: Request, payload: Dict[str, str]):
     if not check_auth_token(request):
         raise HTTPException(status_code=401, detail="Auth required")
     nodes = load_nodes()
     if index < 0 or index >= len(nodes):
         raise HTTPException(status_code=404, detail="Node not found")
     node = nodes[index]
+    filename = payload.get("filename")
+    if not filename:
+        raise HTTPException(status_code=400, detail="Filename required")
 
-    content = await file.read()
+    path = os.path.join(BACKUPS_DIR, os.path.basename(filename))
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Backup file not found")
+
+    with open(path, "rb") as f:
+        content = f.read()
+
     async with httpx.AsyncClient(timeout=30.0) as client:
-        headers = {}
-        if node.get("api_key"):
-            sid = await get_pihole_session(client, node["url"], node["api_key"])
-            if sid:
-                headers["sid"] = sid
-                headers["X-FTL-SID"] = sid
-
+        headers, _ = await get_pihole_session(client, node["url"], node.get("api_key", ""))
         try:
-            files_payload = {"file": (file.filename or "teleporter.zip", io.BytesIO(content), "application/zip")}
+            files_payload = {"file": (filename, io.BytesIO(content), "application/zip")}
             r = await client.post(f"{node['url']}/api/teleporter", headers=headers, files=files_payload)
             if r.status_code in (200, 204):
-                return {"status": "success", "detail": f"Restored Teleporter archive to {node['name']}"}
+                logger.info("Restored %s into %s", filename, node["name"])
+                return {"status": "success", "detail": f"Restored {filename} into {node['name']}"}
             return JSONResponse(status_code=r.status_code, content={"detail": r.text})
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to push restore: {str(e)}")
 
 # --- Sync Engine ---
-@app.post("/api/sync")
+@app.post("/api/sync/execute")
 async def trigger_sync(req: SyncRequestModel, request: Request):
     if not check_auth_token(request):
         raise HTTPException(status_code=401, detail="Auth required")
@@ -529,12 +628,7 @@ async def trigger_sync(req: SyncRequestModel, request: Request):
     sync_results = []
 
     async with httpx.AsyncClient(timeout=15.0) as client:
-        s_headers = {}
-        if source.get("api_key"):
-            s_sid = await get_pihole_session(client, source["url"], source["api_key"])
-            if s_sid:
-                s_headers["sid"] = s_sid
-                s_headers["X-FTL-SID"] = s_sid
+        s_headers, _ = await get_pihole_session(client, source["url"], source.get("api_key", ""))
 
         lists_data = []
         if req.sync_adlists:
@@ -562,12 +656,7 @@ async def trigger_sync(req: SyncRequestModel, request: Request):
             if t_idx == req.source_index or t_idx >= len(nodes):
                 continue
             target = nodes[t_idx]
-            t_headers = {}
-            if target.get("api_key"):
-                t_sid = await get_pihole_session(client, target["url"], target["api_key"])
-                if t_sid:
-                    t_headers["sid"] = t_sid
-                    t_headers["X-FTL-SID"] = t_sid
+            t_headers, _ = await get_pihole_session(client, target["url"], target.get("api_key", ""))
 
             if req.sync_adlists and lists_data:
                 try:
@@ -603,6 +692,7 @@ async def trigger_sync(req: SyncRequestModel, request: Request):
                 except Exception as ex:
                     sync_results.append(f"Domains error on {target['name']}: {str(ex)}")
 
+    logger.info("Executed sync from %s: %s", source["name"], sync_results)
     return {"status": "success", "log": sync_results}
 
 # --- Static File Routing ---
@@ -613,7 +703,7 @@ def get_icon_png():
     if os.path.exists("icon.png"):
         return FileResponse("icon.png", media_type="image/png")
     return Response(status_code=404)
-
+    
 @app.get("/{full_path:path}")
 def serve_frontend(full_path: str):
     static_file = os.path.join("static", full_path)
@@ -621,8 +711,8 @@ def serve_frontend(full_path: str):
         return FileResponse(static_file)
     return FileResponse("static/index.html")
 
-
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 3000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+    
