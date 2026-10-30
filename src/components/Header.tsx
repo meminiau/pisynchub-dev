@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, ShieldAlert, Sun, Moon, RefreshCw, User, LogOut } from 'lucide-react';
+import { Shield, ShieldAlert, Sun, Moon, RefreshCw, User, LogOut, Terminal } from 'lucide-react';
 
 interface HeaderProps {
   theme: 'dark' | 'light';
@@ -10,6 +10,7 @@ interface HeaderProps {
   onRefresh: () => void;
   username: string | null;
   onLogout: () => void;
+  onShowLogs: () => void; // Added for the new Logs button
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -21,6 +22,7 @@ export const Header: React.FC<HeaderProps> = ({
   onRefresh,
   username,
   onLogout,
+  onShowLogs,
 }) => {
   return (
     <header
@@ -64,7 +66,18 @@ export const Header: React.FC<HeaderProps> = ({
             title="Toggle network-wide DNS blocking across all nodes"
           >
             {blockingEnabled ? <ShieldAlert className="h-4 w-4" /> : <Shield className="h-4 w-4" />}
-            <span>{blockingEnabled ? '🛡️ Disable Blocking' : '🛡️ Enable Blocking'}</span>
+            <span className="hidden sm:inline">{blockingEnabled ? 'Disable Blocking' : 'Enable Blocking'}</span>
+          </button>
+
+          {/* New Container Logs Button */}
+          <button
+            type="button"
+            onClick={onShowLogs}
+            className="flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--card-bg)] px-3 py-2 text-xs font-semibold text-[var(--text-strong)] transition-colors hover:bg-[var(--card-hover)]"
+            title="View Live Container Logs"
+          >
+            <Terminal className="h-3.5 w-3.5 text-[var(--accent-blue)]" />
+            <span className="hidden sm:inline">Logs</span>
           </button>
 
           {/* Quick Theme Toggle */}
@@ -75,15 +88,9 @@ export const Header: React.FC<HeaderProps> = ({
             title="Toggle Dark and Light mode"
           >
             {theme === 'dark' ? (
-              <>
-                <Sun className="h-4 w-4 text-amber-400" />
-                <span className="hidden sm:inline">☀️ / 🌙 Light</span>
-              </>
+              <Sun className="h-4 w-4 text-amber-400" />
             ) : (
-              <>
-                <Moon className="h-4 w-4 text-indigo-500" />
-                <span className="hidden sm:inline">☀️ / 🌙 Dark</span>
-              </>
+              <Moon className="h-4 w-4 text-indigo-500" />
             )}
           </button>
 
@@ -95,14 +102,13 @@ export const Header: React.FC<HeaderProps> = ({
             title="Refresh metrics across all nodes"
           >
             <RefreshCw className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Refresh Metrics</span>
           </button>
 
           {/* User Profile */}
           <div className="flex items-center gap-2 border-l border-[var(--border)] pl-2.5">
             <div className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-strong)]">
               <User className="h-3.5 w-3.5 text-[var(--text-muted)]" />
-              <span>{username || 'admin'}</span>
+              <span className="hidden sm:inline">{username || 'admin'}</span>
             </div>
             {username && (
               <button
