@@ -327,7 +327,15 @@ export const App: React.FC = () => {
 
         {nodes.length > 0 && (
           <>
-            <ActivityCharts theme={theme} />
+            <ActivityCharts
+              theme={theme}
+              labels={stats?.history?.labels}
+              permitted={stats?.history?.permitted}
+              cached={stats?.history?.cached}
+              blocked={stats?.history?.blocked}
+              clientSeries={stats?.history?.client_series}
+            />
+            
             <DonutCharts theme={theme} queryTypes={aggQueryTypes} upstreams={aggUpstreams} />
             <TopListsTables
               totalQueries={kpiTotals.totalQueries}
