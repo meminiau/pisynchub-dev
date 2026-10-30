@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -9,6 +9,7 @@ import {
   Legend,
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
+import { Activity } from 'lucide-react';
 
 ChartJS.register(
   CategoryScale,
@@ -21,53 +22,27 @@ ChartJS.register(
 
 interface ActivityChartsProps {
   theme: 'dark' | 'light';
+  labels?: string[];
+  permitted?: number[];
+  cached?: number[];
+  blocked?: number[];
+  clientSeries?: Record<string, number[]>;
 }
 
-export const ActivityCharts: React.FC<ActivityChartsProps> = ({ theme }) => {
+export const ActivityCharts: React.FC<ActivityChartsProps> = ({
+  theme,
+  labels = [],
+  permitted = [],
+  cached = [],
+  blocked = [],
+  clientSeries = {},
+}) => {
   const isDark = theme === 'dark';
   const textColor = isDark ? '#adbac7' : '#24292f';
   const mutedColor = isDark ? '#768390' : '#57606a';
   const gridColor = isDark ? 'rgba(55, 62, 71, 0.45)' : 'rgba(208, 215, 222, 0.65)';
 
-  // Generate 24 hourly buckets
-  const { labels, permitted, cached, blocked, clientSeries } = useMemo(() => {
-    const hours: string[] = [];
-    const perm: number[] = [];
-    const cach: number[] = [];
-    const blck: number[] = [];
-    const clients: Record<string, number[]> = {
-      '192.168.1.10 (unraid-nas)': [],
-      '192.168.1.24 (macbook-pro)': [],
-      '192.168.1.50 (apple-tv-4k)': [],
-      '192.168.1.12 (homeassistant)': [],
-      '192.168.10.44 (samsung-tv)': [],
-    };
-
-    const now = new Date();
-    for (let i = 23; i >= 0; i--) {
-      const d = new Date(now.getTime() - i * 3600 * 1000);
-      const hr = d.getHours();
-      hours.push(`${String(hr).padStart(2, '0')}:00`);
-
-      const wave = Math.sin(((hr - 6) / 24) * Math.PI * 2) * 0.45 + 1.0;
-      const p = Math.round((2800 + ((hr * 137) % 700)) * wave);
-      const c = Math.round((1450 + ((hr * 89) % 420)) * wave);
-      const b = Math.round((1650 + ((hr * 113) % 510)) * wave);
-
-      perm.push(p);
-      cach.push(c);
-      blck.push(b);
-
-      const totalSlice = p + c + b;
-      clients['192.168.1.10 (unraid-nas)'].push(Math.round(totalSlice * 0.28));
-      clients['192.168.1.24 (macbook-pro)'].push(Math.round(totalSlice * 0.24));
-      clients['192.168.1.50 (apple-tv-4k)'].push(Math.round(totalSlice * 0.19));
-      clients['192.168.1.12 (homeassistant)'].push(Math.round(totalSlice * 0.16));
-      clients['192.168.10.44 (samsung-tv)'].push(Math.round(totalSlice * 0.13));
-    }
-
-    return { labels: hours, permitted: perm, cached: cach, blocked: blck, clientSeries: clients };
-  }, []);
+  const hasData = labels.length > 0;
 
   const totalQueriesData = {
     labels,
@@ -144,6 +119,13 @@ export const ActivityCharts: React.FC<ActivityChartsProps> = ({ theme }) => {
     },
   };
 
+  const renderEmptyState = (label: string) => (
+    <div className="flex h-full flex-col items-center justify-center text-center text-[var(--text-muted)] opacity-70">
+      <Activity className="mb-2 h-6 w-6" />
+      <span className="text-xs">Awaiting real-time {label}...</span>
+    </div>
+  );
+
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       {/* Chart 1: Total Queries */}
@@ -160,7 +142,11 @@ export const ActivityCharts: React.FC<ActivityChartsProps> = ({ theme }) => {
           </div>
         </div>
         <div className="h-60 w-full">
-          <Bar data={totalQueriesData} options={chartOptions} />
+          {hasData ? (
+            <Bar data={totalQueriesData} options={chartOptions} />
+          ) : (
+            renderEmptyState('query history')
+          )}
         </div>
       </div>
 
@@ -178,7 +164,11 @@ export const ActivityCharts: React.FC<ActivityChartsProps> = ({ theme }) => {
           </div>
         </div>
         <div className="h-60 w-full">
-          <Bar data={clientActivityData} options={chartOptions} />
+          {hasData && Object.keys(clientSeries).length > 0 ? (
+            <Bar data={clientActivityData} options={chartOptions} />
+          ) : (
+            renderEmptyState('client activity')
+          )}
         </div>
       </div>
     </div>
