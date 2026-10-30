@@ -66,10 +66,29 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
     let isMounted = true;
     setLoading(true);
 
-    api.getNodeConfig(node.name)
+    api.getNodeConfig(nodeIndex)
       .then((data) => {
         if (isMounted) {
-          setConfig(JSON.parse(JSON.stringify(data)));
+          const safeConfig: NodeDetailedConfig = {
+            upstreams: data.upstreams || [],
+            dnssec_enabled: data.dnssec_enabled ?? true,
+            conditional_forwarding: data.conditional_forwarding ?? false,
+            rev_server_cidr: data.rev_server_cidr || '',
+            rev_server_target: data.rev_server_target || '',
+            rev_server_domain: data.rev_server_domain || '',
+            domains: data.domains || [],
+            adlists: data.adlists || [],
+            raw_config: {
+              ftl_port: data.raw_config?.ftl_port ?? 53,
+              cache_size: data.raw_config?.cache_size ?? 10000,
+              blocking_mode: data.raw_config?.blocking_mode ?? 'NULL',
+              max_log_age_days: data.raw_config?.max_log_age_days ?? 365,
+              rate_limit_count: data.raw_config?.rate_limit_count ?? 1000,
+              rate_limit_interval: data.raw_config?.rate_limit_interval ?? 60,
+              ...data.raw_config,
+            },
+          };
+          setConfig(safeConfig);
           setLoading(false);
         }
       })
@@ -79,7 +98,7 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
           onTriggerToast({
             type: 'error',
             title: 'Failed to load node config',
-            message: String(err),
+            message: err instanceof Error ? err.message : String(err),
           });
         }
       });
@@ -87,7 +106,7 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [isOpen, node, onTriggerToast]);
+  }, [isOpen, node, nodeIndex, onTriggerToast]);
 
   if (!isOpen || !node) return null;
 
@@ -171,8 +190,7 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
       domains: config.domains.map((d) => (d.id === id ? { ...d, enabled: !d.enabled } : d)),
     });
   };
-
-  // Handlers for Adlists
+    // Handlers for Adlists
   const handleAddAdlist = (e: React.FormEvent) => {
     e.preventDefault();
     if (!config || !newAdlistUrl.trim()) return;
@@ -218,7 +236,7 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
     if (!node) return;
     setUpdatingGravity(true);
     try {
-      const res = await api.updateGravity(node.name);
+      const res = await api.updateGravity(nodeIndex);
       setUpdatingGravity(false);
       onTriggerToast({
         type: 'success',
@@ -231,7 +249,7 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
       onTriggerToast({
         type: 'error',
         title: 'Gravity Update Failed',
-        message: String(err),
+        message: err instanceof Error ? err.message : String(err),
       });
     }
   };
@@ -241,7 +259,7 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
     if (!node || !config) return;
     setSaving(true);
     try {
-      await api.updateNodeConfig(node.name, config);
+      await api.updateNodeConfig(nodeIndex, config);
       setSaving(false);
       onTriggerToast({
         type: 'success',
@@ -255,7 +273,7 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
       onTriggerToast({
         type: 'error',
         title: 'Failed to Apply Changes',
-        message: String(err),
+        message: err instanceof Error ? err.message : String(err),
       });
     }
   };
@@ -267,10 +285,8 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
       aria-modal="true"
       aria-labelledby="drawer-title"
     >
-      {/* Background click to dismiss */}
       <div className="absolute inset-0" onClick={onClose} />
 
-      {/* Slide-out Panel (Drawer) adhering seamlessly to BOTH Dark and Light Mode via CSS variables */}
       <div
         className="relative z-10 flex h-full w-full max-w-2xl flex-col border-l border-[var(--border)] shadow-2xl transition-transform duration-300"
         style={{
@@ -379,8 +395,7 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
             Raw Config / Teleporter
           </button>
         </div>
-
-        {/* Content Body */}
+                {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-6">
           {loading || !config ? (
             <div className="flex h-64 flex-col items-center justify-center gap-3 text-sm text-[var(--text-muted)]">
@@ -392,7 +407,6 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
               {/* TAB 1: DNS & Upstreams */}
               {activeTab === 'dns' && (
                 <div className="flex flex-col gap-6">
-                  {/* Upstream DNS Servers */}
                   <div>
                     <h3 className="mb-2 text-sm font-bold text-[var(--text-strong)]">Upstream DNS Servers</h3>
                     <p className="mb-3 text-xs text-[var(--text-muted)]">
@@ -434,7 +448,6 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
                       ))}
                     </div>
 
-                    {/* Add Custom Upstream Form */}
                     <form onSubmit={handleAddCustomUpstream} className="mt-3 flex flex-wrap items-center gap-2">
                       <input
                         type="text"
@@ -470,7 +483,6 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
                     </form>
                   </div>
 
-                  {/* DNSSEC Toggle */}
                   <div
                     className="flex items-center justify-between rounded-lg border border-[var(--border)] p-4"
                     style={{ backgroundColor: 'var(--bg-elevated)' }}
@@ -495,7 +507,6 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
                     </label>
                   </div>
 
-                  {/* Conditional Forwarding */}
                   <div className="rounded-lg border border-[var(--border)] p-4" style={{ backgroundColor: 'var(--bg-elevated)' }}>
                     <div className="mb-2 flex items-center justify-between">
                       <div className="text-sm font-semibold text-[var(--text-strong)]">Conditional Forwarding</div>
@@ -562,7 +573,6 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
                     </span>
                   </div>
 
-                  {/* Add New Domain Form */}
                   <form
                     onSubmit={handleAddDomainRule}
                     className="flex flex-col gap-2 rounded-lg border border-[var(--border)] p-3"
@@ -625,7 +635,6 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
                     </div>
                   </form>
 
-                  {/* Rules Table */}
                   <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
                     <table className="w-full border-collapse text-left text-xs">
                       <thead>
@@ -687,8 +696,7 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
                   </div>
                 </div>
               )}
-
-              {/* TAB 3: Adlists */}
+                            {/* TAB 3: Adlists */}
               {activeTab === 'adlists' && (
                 <div className="flex flex-col gap-5">
                   <div className="flex items-center justify-between">
@@ -710,7 +718,6 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
                     </button>
                   </div>
 
-                  {/* Add Adlist Form */}
                   <form
                     onSubmit={handleAddAdlist}
                     className="flex flex-col gap-2 rounded-lg border border-[var(--border)] p-3"
@@ -744,7 +751,6 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
                     </div>
                   </form>
 
-                  {/* Adlists List */}
                   <div className="flex flex-col gap-2">
                     {config.adlists.map((adlist) => (
                       <div
@@ -791,7 +797,6 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
               {/* TAB 4: Raw Config / Teleporter */}
               {activeTab === 'config' && (
                 <div className="flex flex-col gap-6">
-                  {/* Teleporter Backup Snapshot */}
                   <div
                     className="flex items-center justify-between rounded-lg border border-[var(--border)] p-4"
                     style={{ backgroundColor: 'var(--bg-elevated)' }}
@@ -812,7 +817,6 @@ export const NodeSettingsDrawer: React.FC<NodeSettingsDrawerProps> = ({
                     </button>
                   </div>
 
-                  {/* Key Pi-hole v6 FTL Parameters */}
                   <div>
                     <h3 className="mb-2 text-sm font-bold text-[var(--text-strong)]">FTL Core Daemon Parameters</h3>
                     <p className="mb-3 text-xs text-[var(--text-muted)]">
