@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { api } from './services/api';
-import { PiholeNode, BackupItem, ToastNotification } from './types';
+import { PiholeNode, BackupItem, ToastNotification, DashboardStats } from './types';
 import { Header } from './components/Header';
 import { KPICards } from './components/KPICards';
 import { ActivityCharts } from './components/ActivityCharts';
@@ -48,13 +48,14 @@ export const App: React.FC = () => {
   const [nodes, setNodes] = useState<PiholeNode[]>([]);
   const [backups, setBackups] = useState<BackupItem[]>([]);
   const [selectedNodeFilter, setSelectedNodeFilter] = useState<string>('ALL');
+  const [historyData, setHistoryData] = useState<DashboardStats['history']>();
 
   // Drawer & Modals state
   const [drawerNode, setDrawerNode] = useState<PiholeNode | null>(null);
   const [drawerNodeIndex, setDrawerNodeIndex] = useState<number>(0);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isAddNodeOpen, setIsAddNodeOpen] = useState(false);
-  const [showLogsModal, setShowLogsModal] = useState(false); // NEW Logs Modal State
+  const [showLogsModal, setShowLogsModal] = useState(false);
 
   // Sync state
   const [syncBusy, setSyncBusy] = useState(false);
@@ -79,6 +80,7 @@ export const App: React.FC = () => {
       const stats = await api.getDashboardStats();
       if (stats.blocking) setBlockingEnabled(stats.blocking.enabled);
       if (Array.isArray(stats.nodes)) setNodes(stats.nodes);
+      if (stats.history) setHistoryData(stats.history);
       const bData = await api.getBackups();
       if (bData && Array.isArray(bData.backups)) setBackups(bData.backups);
     } catch (err) {
@@ -203,10 +205,10 @@ export const App: React.FC = () => {
       Object.entries(dict).map(([k, v]) => ({ [keyName]: k, count: v })).sort((a: any, b: any) => b.count - a.count).slice(0, 10);
 
     return {
-      permittedDomains: toArray(perm, 'domain') as {domain: string, count: number}[],
-      blockedDomains: toArray(blck, 'domain') as {domain: string, count: number}[],
-      topClientsTotal: toArray(cliTot, 'client') as {client: string, count: number}[],
-      topClientsBlocked: toArray(cliBlk, 'client') as {client: string, count: number}[],
+      permittedDomains: toArray(perm, 'domain') as { domain: string; count: number }[],
+      blockedDomains: toArray(blck, 'domain') as { domain: string; count: number }[],
+      topClientsTotal: toArray(cliTot, 'client') as { client: string; count: number }[],
+      topClientsBlocked: toArray(cliBlk, 'client') as { client: string; count: number }[],
     };
   }, [activeScopedNodes]);
 
@@ -233,7 +235,8 @@ export const App: React.FC = () => {
       setSyncBusy(false);
     }
   };
-    return (
+
+  return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] transition-colors duration-150">
       <Header
         theme={theme}
@@ -329,11 +332,11 @@ export const App: React.FC = () => {
           <>
             <ActivityCharts
               theme={theme}
-              labels={stats?.history?.labels}
-              permitted={stats?.history?.permitted}
-              cached={stats?.history?.cached}
-              blocked={stats?.history?.blocked}
-              clientSeries={stats?.history?.client_series}
+              labels={historyData?.labels}
+              permitted={historyData?.permitted}
+              cached={historyData?.cached}
+              blocked={historyData?.blocked}
+              clientSeries={historyData?.client_series}
             />
             
             <DonutCharts theme={theme} queryTypes={aggQueryTypes} upstreams={aggUpstreams} />
@@ -392,7 +395,6 @@ export const App: React.FC = () => {
       
       <AuthModal isOpen={showAuthModal} isSetup={isSetupMode} onSuccess={(user) => { setUsername(user); setShowAuthModal(false); setIsSetupMode(false); refreshData(); }} />
       
-      {/* New Logs Modal */}
       <LogsModal isOpen={showLogsModal} onClose={() => setShowLogsModal(false)} />
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
