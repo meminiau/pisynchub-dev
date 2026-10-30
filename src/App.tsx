@@ -12,6 +12,7 @@ import { TeleporterVault } from './components/TeleporterVault';
 import { NodeSettingsDrawer } from './components/NodeSettingsDrawer';
 import { AddNodeModal } from './components/AddNodeModal';
 import { AuthModal } from './components/AuthModal';
+import { LogsModal } from './components/LogsModal';
 import { ToastContainer } from './components/Toast';
 import { ShieldAlert, Plus, Server } from 'lucide-react';
 
@@ -32,9 +33,7 @@ export const App: React.FC = () => {
     } catch {}
   }, [theme]);
 
-  const handleToggleTheme = () => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-  };
+  const handleToggleTheme = () => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
 
   // Auth & Setup state
   const [username, setUsername] = useState<string | null>(null);
@@ -55,6 +54,7 @@ export const App: React.FC = () => {
   const [drawerNodeIndex, setDrawerNodeIndex] = useState<number>(0);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isAddNodeOpen, setIsAddNodeOpen] = useState(false);
+  const [showLogsModal, setShowLogsModal] = useState(false); // NEW Logs Modal State
 
   // Sync state
   const [syncBusy, setSyncBusy] = useState(false);
@@ -71,35 +71,22 @@ export const App: React.FC = () => {
     }, 4500);
   }, []);
 
-  const dismissToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
+  const dismissToast = (id: string) => setToasts((prev) => prev.filter((t) => t.id !== id));
 
   // Data loader
   const refreshData = useCallback(async () => {
     try {
       const stats = await api.getDashboardStats();
-      if (stats.blocking) {
-        setBlockingEnabled(stats.blocking.enabled);
-      }
-      if (Array.isArray(stats.nodes)) {
-        setNodes(stats.nodes);
-      }
-
+      if (stats.blocking) setBlockingEnabled(stats.blocking.enabled);
+      if (Array.isArray(stats.nodes)) setNodes(stats.nodes);
       const bData = await api.getBackups();
-      if (bData && Array.isArray(bData.backups)) {
-        setBackups(bData.backups);
-      }
+      if (bData && Array.isArray(bData.backups)) setBackups(bData.backups);
     } catch (err) {
-      addToast({
-        type: 'error',
-        title: 'Error refreshing cluster stats',
-        message: String(err),
-      });
+      addToast({ type: 'error', title: 'Error refreshing cluster stats', message: String(err) });
     }
   }, [addToast]);
 
-  // Initial Auth & Setup Check (Part 3)
+  // Initial Auth & Setup Check
   useEffect(() => {
     const checkAuthStatus = async () => {
       try {
@@ -133,7 +120,6 @@ export const App: React.FC = () => {
     }
   }, [refreshData, username, showAuthModal]);
 
-  // Network-wide Blocking Toggle Handler
   const handleToggleBlocking = async () => {
     const nextState = !blockingEnabled;
     setBlockingBusy(true);
@@ -144,35 +130,22 @@ export const App: React.FC = () => {
       addToast({
         type: nextState ? 'success' : 'info',
         title: nextState ? '🛡️ Blocking Enabled' : '⚠️ Blocking Paused',
-        message: nextState
-          ? 'DNS gravity sinkhole filtering is active across all cluster nodes.'
-          : 'All nodes are temporarily permitting non-filtered queries.',
+        message: nextState ? 'DNS filtering active across cluster.' : 'Filtering paused.',
       });
       refreshData();
     } catch (err) {
       setBlockingBusy(false);
-      addToast({
-        type: 'error',
-        title: 'Failed to update blocking state',
-        message: String(err),
-      });
+      addToast({ type: 'error', title: 'Update failed', message: String(err) });
     }
   };
 
-  // Filtered nodes
   const activeScopedNodes = useMemo(() => {
     if (selectedNodeFilter === 'ALL') return nodes;
     return nodes.filter((n) => n.name === selectedNodeFilter);
   }, [nodes, selectedNodeFilter]);
 
-  // Aggregated KPI Totals
   const kpiTotals = useMemo(() => {
-    let totalQueries = 0;
-    let blockedQueries = 0;
-    let cachedQueries = 0;
-    let maxGravity = 0;
-    let totalQpm = 0;
-
+    let totalQueries = 0, blockedQueries = 0, cachedQueries = 0, maxGravity = 0, totalQpm = 0;
     activeScopedNodes.forEach((n) => {
       totalQueries += Number(n.queries || 0);
       blockedQueries += Number(n.blocked || 0);
@@ -180,177 +153,87 @@ export const App: React.FC = () => {
       maxGravity = Math.max(maxGravity, Number(n.gravity_size || 0));
       totalQpm += Number(n.qpm || 0);
     });
-
-    const pct = totalQueries > 0 ? (blockedQueries / totalQueries) * 100 : 0;
-
     return {
-      totalQueries,
-      blockedQueries,
-      cachedQueries,
-      percentBlocked: pct,
-      gravityDomains: maxGravity,
-      totalQpm,
+      totalQueries, blockedQueries, cachedQueries,
+      percentBlocked: totalQueries > 0 ? (blockedQueries / totalQueries) * 100 : 0,
+      gravityDomains: maxGravity, totalQpm,
     };
   }, [activeScopedNodes]);
 
-  // Aggregated Query Types and Upstreams
   const { aggQueryTypes, aggUpstreams } = useMemo(() => {
     const qt: Record<string, number> = {};
     const up: Record<string, number> = {};
-
     activeScopedNodes.forEach((n) => {
-      if (n.querytypes) {
-        Object.entries(n.querytypes).forEach(([k, v]) => {
-          qt[k] = (qt[k] || 0) + v;
-        });
-      }
-      if (n.upstreams) {
-        Object.entries(n.upstreams).forEach(([k, v]) => {
-          up[k] = (up[k] || 0) + v;
-        });
-      }
+      if (n.querytypes) Object.entries(n.querytypes).forEach(([k, v]) => { qt[k] = (qt[k] || 0) + v; });
+      if (n.upstreams) Object.entries(n.upstreams).forEach(([k, v]) => { up[k] = (up[k] || 0) + v; });
     });
-
     return { aggQueryTypes: qt, aggUpstreams: up };
   }, [activeScopedNodes]);
 
-  // Node Actions
-  const handleManageNode = (node: PiholeNode, index: number) => {
-    setDrawerNode(node);
-    setDrawerNodeIndex(index);
-    setIsDrawerOpen(true);
-  };
+  // Aggregate Real Top Items
+  const aggTopItems = useMemo(() => {
+    const perm: Record<string, number> = {};
+    const blck: Record<string, number> = {};
+    const cliTot: Record<string, number> = {};
+    const cliBlk: Record<string, number> = {};
 
-  const handleCreateNodeBackup = async (index: number) => {
-    const targetNode = nodes[index];
-    try {
-      const res = await api.createBackup(index);
-      addToast({
-        type: 'success',
-        title: 'Teleporter Backup Created',
-        message: `Saved ${res.filename} from ${targetNode ? targetNode.name : 'node'}.`,
-      });
-      refreshData();
-    } catch (err) {
-      addToast({
-        type: 'error',
-        title: 'Backup Failed',
-        message: String(err),
-      });
-    }
-  };
-
-  const handleDeleteNode = async (index: number, name: string) => {
-    try {
-      await api.deleteNode(index);
-      addToast({
-        type: 'info',
-        title: 'Node Removed',
-        message: `Removed "${name}" from the cluster configuration.`,
-      });
-      refreshData();
-    } catch (err) {
-      addToast({
-        type: 'error',
-        title: 'Failed to delete node',
-        message: String(err),
-      });
-    }
-  };
-
-  const handleAddNode = async (nodeData: { name: string; url: string; api_key?: string }) => {
-    try {
-      await api.addNode(nodeData);
-      addToast({
-        type: 'success',
-        title: 'Node Added to Cluster',
-        message: `Successfully connected ${nodeData.name} (${nodeData.url}).`,
-      });
-      setIsAddNodeOpen(false);
-      refreshData();
-    } catch (err) {
-      addToast({
-        type: 'error',
-        title: 'Failed to add node',
-        message: String(err),
-      });
-    }
-  };
-
-  const handleRestoreBackup = async (nodeIndex: number, file: File) => {
-    try {
-      const res = await api.restoreBackup(nodeIndex, file.name);
-      addToast({
-        type: 'success',
-        title: 'Teleporter Restore Complete',
-        message: res.detail,
-      });
-      refreshData();
-    } catch (err) {
-      addToast({
-        type: 'error',
-        title: 'Restore Failed',
-        message: String(err),
-      });
-    }
-  };
-
-  // Sync execution
-  const handleExecuteSync = async (params: {
-    sourceIndex: number;
-    targetIndices: number[];
-    scopes: {
-      adlists: boolean;
-      domains: boolean;
-      groups: boolean;
-      localDns: boolean;
-    };
-    autoBackup: boolean;
-  }) => {
-    setSyncBusy(true);
-    const src = nodes[params.sourceIndex];
-    const timestamp = new Date().toLocaleTimeString();
-
-    if (params.autoBackup) {
-      for (const tIdx of params.targetIndices) {
-        await api.createBackup(tIdx);
+    activeScopedNodes.forEach(node => {
+      const n = node as any;
+      const addItems = (source: any[], target: Record<string, number>, keyName: string) => {
+        if (Array.isArray(source)) {
+          source.forEach(item => {
+            if (item && typeof item === 'object') {
+              const name = item[keyName] || item.name || item.ip || 'Unknown';
+              const count = item.count || item.queries || 0;
+              target[name] = (target[name] || 0) + count;
+            }
+          });
+        }
+      };
+      
+      if (n.top_items) {
+        addItems(n.top_items.top_permitted, perm, 'domain');
+        addItems(n.top_items.top_blocked, blck, 'domain');
+        addItems(n.top_items.top_clients, cliTot, 'client');
+        addItems(n.top_items.top_clients_blocked, cliBlk, 'client');
       }
-    }
+    });
 
+    const toArray = (dict: Record<string, number>, keyName: string) => 
+      Object.entries(dict).map(([k, v]) => ({ [keyName]: k, count: v })).sort((a: any, b: any) => b.count - a.count).slice(0, 10);
+
+    return {
+      permittedDomains: toArray(perm, 'domain') as {domain: string, count: number}[],
+      blockedDomains: toArray(blck, 'domain') as {domain: string, count: number}[],
+      topClientsTotal: toArray(cliTot, 'client') as {client: string, count: number}[],
+      topClientsBlocked: toArray(cliBlk, 'client') as {client: string, count: number}[],
+    };
+  }, [activeScopedNodes]);
+
+  const handleManageNode = (node: PiholeNode, index: number) => { setDrawerNode(node); setDrawerNodeIndex(index); setIsDrawerOpen(true); };
+  const handleDeleteNode = async (index: number) => { await api.deleteNode(index); refreshData(); };
+  const handleCreateNodeBackup = async (index: number) => { await api.createBackup(index); refreshData(); };
+  const handleRestoreBackup = async (index: number, file: File) => { await api.restoreBackup(index, file.name); refreshData(); };
+  
+  const handleAddNode = async (nodeData: { name: string; url: string; api_key?: string }) => {
+    await api.addNode(nodeData); setIsAddNodeOpen(false); refreshData();
+  };
+
+  const handleExecuteSync = async (params: any) => {
+    setSyncBusy(true);
     try {
       const res = await api.executeSync({
-        source_index: params.sourceIndex,
-        target_indices: params.targetIndices,
-        sync_adlists: params.scopes.adlists,
-        sync_domains: params.scopes.domains,
-        sync_groups: params.scopes.groups,
-        sync_local_dns: params.scopes.localDns,
+        source_index: params.sourceIndex, target_indices: params.targetIndices,
+        sync_adlists: params.scopes.adlists, sync_domains: params.scopes.domains,
+        sync_groups: params.scopes.groups, sync_local_dns: params.scopes.localDns,
       });
-
-      setSyncBusy(false);
-      setSyncLogs((prev) => [
-        `[${timestamp}] Sync completed successfully from ${src?.name || 'Master'}:`,
-        ...res.log,
-        ...prev,
-      ]);
-
-      addToast({
-        type: 'success',
-        title: 'Teleporter Sync Executed',
-        message: `Successfully replicated configurations to ${params.targetIndices.length} replica node(s).`,
-      });
+      setSyncLogs((prev) => [`[${new Date().toLocaleTimeString()}] Sync completed:`, ...res.log, ...prev]);
       refreshData();
-    } catch (err) {
+    } finally {
       setSyncBusy(false);
-      addToast({
-        type: 'error',
-        title: 'Sync Execution Failed',
-        message: String(err),
-      });
     }
   };
-
-  return (
+    return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] transition-colors duration-150">
       <Header
         theme={theme}
@@ -367,6 +250,7 @@ export const App: React.FC = () => {
           setIsSetupMode(false);
           addToast({ type: 'info', title: 'Logged Out', message: 'Admin session closed.' });
         }}
+        onShowLogs={() => setShowLogsModal(true)}
       />
 
       <main className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6">
@@ -395,10 +279,7 @@ export const App: React.FC = () => {
               Network-Wide DNS Overview
             </h1>
             <div className="text-xs text-[var(--text-muted)]">
-              Aggregated real-time telemetry across {nodes.length} Pi-hole v6 nodes · Filtering{' '}
-              <strong className={blockingEnabled ? 'text-emerald-400' : 'text-rose-400'}>
-                {blockingEnabled ? 'ACTIVE' : 'DISABLED'}
-              </strong>
+              Aggregated real-time telemetry across {nodes.length} Pi-hole v6 nodes
             </div>
           </div>
 
@@ -434,7 +315,6 @@ export const App: React.FC = () => {
           )}
         </div>
 
-        {/* KPI Cards */}
         <KPICards
           totalQueries={kpiTotals.totalQueries}
           blockedQueries={kpiTotals.blockedQueries}
@@ -445,7 +325,6 @@ export const App: React.FC = () => {
           activeNodesCount={activeScopedNodes.length}
         />
 
-        {/* Analytics Section (Rendered when nodes exist) */}
         {nodes.length > 0 && (
           <>
             <ActivityCharts theme={theme} />
@@ -453,15 +332,16 @@ export const App: React.FC = () => {
             <TopListsTables
               totalQueries={kpiTotals.totalQueries}
               blockedQueries={kpiTotals.blockedQueries}
+              permittedDomains={aggTopItems.permittedDomains}
+              blockedDomains={aggTopItems.blockedDomains}
+              topClientsTotal={aggTopItems.topClientsTotal}
+              topClientsBlocked={aggTopItems.topClientsBlocked}
             />
           </>
         )}
 
         {/* Cluster Nodes Section */}
-        <div
-          className="rounded-lg border border-[var(--border)] p-4 shadow-sm"
-          style={{ backgroundColor: 'var(--card-bg)' }}
-        >
+        <div className="rounded-lg border border-[var(--border)] p-4 shadow-sm bg-[var(--card-bg)]">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] pb-3">
             <div>
               <div className="flex items-center gap-2">
@@ -470,111 +350,42 @@ export const App: React.FC = () => {
                   Pi-hole v6 Cluster Nodes ({nodes.length})
                 </h2>
               </div>
-              <div className="text-xs text-[var(--text-muted)]">
-                Manage individual node configurations, live telemetry, and open local Admin WebUI
-              </div>
             </div>
-
             <button
               type="button"
               onClick={() => setIsAddNodeOpen(true)}
-              className="flex items-center gap-1.5 rounded-md bg-[var(--accent-green)] px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:opacity-90 cursor-pointer"
+              className="flex items-center gap-1.5 rounded-md bg-[var(--accent-green)] px-3 py-1.5 text-xs font-bold text-white hover:opacity-90 cursor-pointer"
             >
-              <Plus className="h-3.5 w-3.5" />
-              <span>Add Node</span>
+              <Plus className="h-3.5 w-3.5" /> Add Node
             </button>
           </div>
 
           {nodes.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <div className="rounded-full bg-[var(--card-hover)] p-4 text-[var(--text-muted)] mb-3">
-                <Server className="h-8 w-8 text-[var(--accent-blue)]" />
-              </div>
-              <h3 className="text-sm font-bold text-[var(--text-strong)]">No Pi-hole Nodes Connected</h3>
-              <p className="max-w-md text-xs text-[var(--text-muted)] mt-1 mb-4">
-                Add your primary and secondary Pi-hole v6 instances to begin real-time telemetry aggregation and teleporter configuration synchronization.
-              </p>
-              <button
-                type="button"
-                onClick={() => setIsAddNodeOpen(true)}
-                className="flex items-center gap-1.5 rounded-md bg-[var(--accent-blue)] px-4 py-2 text-xs font-semibold text-white shadow-xs hover:opacity-90 cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Connect Your First Node</span>
-              </button>
-            </div>
+            <div className="py-12 text-center text-sm text-[var(--text-muted)]">No nodes connected yet.</div>
           ) : (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               {nodes.map((node, idx) => (
-                <NodeCard
-                  key={`${node.name}-${idx}`}
-                  node={node}
-                  index={idx}
-                  onManageNode={handleManageNode}
-                  onBackupNode={handleCreateNodeBackup}
-                  onDeleteNode={handleDeleteNode}
-                />
+                <NodeCard key={`${node.name}-${idx}`} node={node} index={idx} onManageNode={handleManageNode} onBackupNode={handleCreateNodeBackup} onDeleteNode={handleDeleteNode} />
               ))}
             </div>
           )}
         </div>
 
-        {/* Sync & Vault Section */}
         {nodes.length > 0 && (
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-            <TeleportSync
-              nodes={nodes}
-              onExecuteSync={handleExecuteSync}
-              syncBusy={syncBusy}
-              syncLogs={syncLogs}
-            />
-
-            <TeleporterVault
-              nodes={nodes}
-              backups={backups}
-              onCreateBackup={handleCreateNodeBackup}
-              onRestoreBackup={handleRestoreBackup}
-            />
+            <TeleportSync nodes={nodes} onExecuteSync={handleExecuteSync} syncBusy={syncBusy} syncLogs={syncLogs} />
+            <TeleporterVault nodes={nodes} backups={backups} onCreateBackup={handleCreateNodeBackup} onRestoreBackup={handleRestoreBackup} />
           </div>
         )}
       </main>
 
-      <NodeSettingsDrawer
-        node={drawerNode}
-        isOpen={isDrawerOpen}
-        onClose={() => {
-          setIsDrawerOpen(false);
-          setDrawerNode(null);
-        }}
-        onSaved={refreshData}
-        onTriggerToast={addToast}
-        onCreateBackup={handleCreateNodeBackup}
-        nodeIndex={drawerNodeIndex}
-      />
-
-      <AddNodeModal
-        isOpen={isAddNodeOpen}
-        onClose={() => setIsAddNodeOpen(false)}
-        onAdd={handleAddNode}
-      />
-
-      <AuthModal
-        isOpen={showAuthModal}
-        isSetup={isSetupMode}
-        onSuccess={(user) => {
-          setUsername(user);
-          setShowAuthModal(false);
-          setIsSetupMode(false);
-          refreshData();
-          addToast({
-            type: 'success',
-            title: isSetupMode ? 'Setup Complete' : 'Authenticated',
-            message: isSetupMode
-              ? `Welcome ${user}! PiSyncHub is now configured.`
-              : `Logged in as ${user}.`,
-          });
-        }}
-      />
+      <NodeSettingsDrawer node={drawerNode} isOpen={isDrawerOpen} onClose={() => { setIsDrawerOpen(false); setDrawerNode(null); }} onSaved={refreshData} onTriggerToast={addToast} onCreateBackup={handleCreateNodeBackup} nodeIndex={drawerNodeIndex} />
+      <AddNodeModal isOpen={isAddNodeOpen} onClose={() => setIsAddNodeOpen(false)} onAdd={handleAddNode} />
+      
+      <AuthModal isOpen={showAuthModal} isSetup={isSetupMode} onSuccess={(user) => { setUsername(user); setShowAuthModal(false); setIsSetupMode(false); refreshData(); }} />
+      
+      {/* New Logs Modal */}
+      <LogsModal isOpen={showLogsModal} onClose={() => setShowLogsModal(false)} />
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
