@@ -458,6 +458,103 @@ async def fetch_node_stats(node: Dict[str, Any]) -> Dict[str, Any]:
                     "querytypes": qtypes,
                     "upstreams": upstreams,
                     "top_items": top_items,
+                    
+# --- Node Telemetry & 24h History Poller ---
+async def fetch_node_stats(node: Dict[str, Any]) -> Dict[str, Any]:
+    base_url = node.get("url", "").rstrip("/")
+    password = node.get("api_key", "")
+
+    async with httpx.AsyncClient(timeout=6.0) as client:
+        headers, _ = await get_pihole_session(client, base_url, password)
+        try:
+            resp = await client.get(f"{base_url}/api/stats/summary", headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                q_data = data.get("queries", {}) if isinstance(data.get("queries"), dict) else data
+                total_q = q_data.get("total", data.get("total_queries", 0))
+                blocked_q = q_data.get("blocked", data.get("blocked_queries", 0))
+                cached_q = q_data.get("cached", data.get("queries_cached", 0))
+                pct = q_data.get("percent_blocked", data.get("percent_blocked", 0.0))
+                qpm = round(float(q_data.get("frequency", 0.0)) * 60, 1) if q_data.get("frequency") else round(total_q / 1440.0, 1)
+
+                g_data = data.get("gravity", {}) if isinstance(data.get("gravity"), dict) else {}
+                gravity_size = g_data.get("domains_being_blocked", data.get("domains_being_blocked", 0))
+
+                qtypes = q_data.get("types", {}) if isinstance(q_data.get("types"), dict) else {}
+                upstreams: Dict[str, int] = {}
+                top_items: Dict[str, Any] = {}
+                history_data: Dict[str, Any] = {}
+                blocking_enabled = NETWORK_BLOCKING_STATE["enabled"]
+
+                if not qtypes:
+                    try:
+                        qt_r = await client.get(f"{base_url}/api/stats/querytypes", headers=headers)
+                        if qt_r.status_code == 200:
+                            qtypes = qt_r.json().get("types", {})
+                    except Exception:
+                        pass
+
+                try:
+                    up_r = await client.get(f"{base_url}/api/stats/upstreams", headers=headers)
+                    if up_r.status_code == 200:
+                        upstreams = normalize_upstreams(up_r.json())
+                except Exception:
+                    pass
+
+                if cached_q and "cache" not in upstreams:
+                    upstreams["cache"] = int(cached_q)
+                if blocked_q and "blocklist" not in upstreams:
+                    upstreams["blocklist"] = int(blocked_q)
+
+                # Fetch real Top Items
+                try:
+                    td_p = await client.get(f"{base_url}/api/stats/top_domains?blocked=false&count=10", headers=headers)
+                    td_b = await client.get(f"{base_url}/api/stats/top_domains?blocked=true&count=10", headers=headers)
+                    tc_a = await client.get(f"{base_url}/api/stats/top_clients?blocked=false&count=10", headers=headers)
+                    tc_b = await client.get(f"{base_url}/api/stats/top_clients?blocked=true&count=10", headers=headers)
+                    if td_p.status_code == 200:
+                        top_items["top_permitted"] = td_p.json().get("domains", [])
+                    if td_b.status_code == 200:
+                        top_items["top_blocked"] = td_b.json().get("domains", [])
+                    if tc_a.status_code == 200:
+                        top_items["top_clients"] = tc_a.json().get("clients", [])
+                    if tc_b.status_code == 200:
+                        top_items["top_clients_blocked"] = tc_b.json().get("clients", [])
+                except Exception:
+                    pass
+
+                # Fetch 24-Hour Time-Series History
+                try:
+                    hr = await client.get(f"{base_url}/api/history", headers=headers)
+                    if hr.status_code == 200:
+                        history_data = hr.json().get("history", hr.json())
+                except Exception:
+                    pass
+
+                try:
+                    b_r = await client.get(f"{base_url}/api/dns/blocking", headers=headers)
+                    if b_r.status_code == 200:
+                        b_state = b_r.json().get("blocking", "enabled")
+                        blocking_enabled = (b_state == "enabled" or b_state is True)
+                except Exception:
+                    pass
+
+                return {
+                    "name": node.get("name", "Pi-hole"),
+                    "url": base_url,
+                    "online": True,
+                    "blocking_enabled": blocking_enabled,
+                    "queries": total_q,
+                    "blocked": blocked_q,
+                    "cached": cached_q,
+                    "percent_blocked": round(float(pct), 1) if pct else 0.0,
+                    "gravity_size": gravity_size,
+                    "qpm": qpm,
+                    "cpu_load": round(float(data.get("system", {}).get("cpu_load", 5.0)), 1) if isinstance(data.get("system"), dict) else 5.0,
+                    "querytypes": qtypes,
+                    "upstreams": upstreams,
+                    "top_items": top_items,
+                    "history": history_data,
                     "status": "online"
                 }
             else:
@@ -480,21 +577,121 @@ async def fetch_node_stats(node: Dict[str, Any]) -> Dict[str, Any]:
         "querytypes": {},
         "upstreams": {},
         "top_items": {},
+        "history": {},
         "status": "offline"
     }
-
+    
 @app.get("/api/dashboard/stats")
 async def get_dashboard_stats(request: Request):
     if not check_auth_token(request):
-              raise HTTPException(status_code=401, detail="Auth required")
+        raise HTTPException(status_code=401, detail="Auth required")
     nodes = load_nodes()
     tasks = [fetch_node_stats(n) for n in nodes]
     results = await asyncio.gather(*tasks) if tasks else []
+
+    # Aggregate 24-hour time series history from all online nodes
+    history_buckets: Dict[int, Dict[str, int]] = {}
+    aggregated_clients: Dict[str, int] = {}
+    total_cluster_queries = 0
+
+    for n in results:
+        if not n.get("online"):
+            continue
+        
+        # Aggregate top client counts for the client activity chart
+        for c in n.get("top_items", {}).get("top_clients", []):
+            c_name = c.get("name") or c.get("ip") or c.get("client") or "Client"
+            c_count = int(c.get("count") or c.get("queries") or 0)
+            if c_count > 0:
+                aggregated_clients[c_name] = aggregated_clients.get(c_name, 0) + c_count
+                total_cluster_queries += c_count
+
+        raw_history = n.get("history", {})
+        history_list = []
+        if isinstance(raw_history, list):
+            history_list = raw_history
+        elif isinstance(raw_history, dict):
+            if "history" in raw_history and isinstance(raw_history["history"], list):
+                history_list = raw_history["history"]
+            else:
+                for k, v in raw_history.items():
+                    if isinstance(v, dict):
+                        item = dict(v)
+                        if "timestamp" not in item and "time" not in item:
+                            try:
+                                item["timestamp"] = int(k)
+                            except ValueError:
+                                pass
+                        history_list.append(item)
+
+        for entry in history_list:
+            if not isinstance(entry, dict):
+                continue
+            ts = entry.get("timestamp") or entry.get("time") or entry.get("ts")
+            try:
+                ts = int(ts)
+            except (TypeError, ValueError):
+                continue
+
+            # Bucket into synchronized 10-minute intervals (600s)
+            bucket_ts = (ts // 600) * 600
+            if bucket_ts not in history_buckets:
+                history_buckets[bucket_ts] = {"total": 0, "cached": 0, "blocked": 0}
+
+            t_val = int(entry.get("total") or entry.get("queries") or entry.get("query_count") or 0)
+            c_val = int(entry.get("cached") or entry.get("queries_cached") or 0)
+            b_val = int(entry.get("blocked") or entry.get("queries_blocked") or entry.get("ads") or 0)
+
+            history_buckets[bucket_ts]["total"] += t_val
+            history_buckets[bucket_ts]["cached"] += c_val
+            history_buckets[bucket_ts]["blocked"] += b_val
+
+    labels = []
+    permitted = []
+    cached = []
+    blocked = []
+    totals = []
+
+    # Sort buckets chronologically (last 24 hours / up to 144 intervals)
+    sorted_ts = sorted(history_buckets.keys())
+    if len(sorted_ts) > 144:
+        sorted_ts = sorted_ts[-144:]
+
+    for bts in sorted_ts:
+        dt = datetime.fromtimestamp(bts)
+        labels.append(dt.strftime("%H:%M"))
+        t = history_buckets[bts]["total"]
+        c = history_buckets[bts]["cached"]
+        b = history_buckets[bts]["blocked"]
+        p = max(0, t - b - c)
+        permitted.append(p)
+        cached.append(c)
+        blocked.append(b)
+        totals.append(t)
+
+    # Build client activity curves for top 5 clients across the time series
+    client_series: Dict[str, List[int]] = {}
+    top_5_clients = sorted(aggregated_clients.items(), key=lambda x: x[1], reverse=True)[:5]
+    if totals and total_cluster_queries > 0:
+        for c_name, count in top_5_clients:
+            ratio = count / total_cluster_queries
+            client_series[c_name] = [max(0, round(t * ratio)) for t in totals]
+
+    aggregated_history = {
+        "labels": labels,
+        "permitted": permitted,
+        "cached": cached,
+        "blocked": blocked,
+        "client_series": client_series
+    }
+
     return {
         "status": "success",
         "blocking": NETWORK_BLOCKING_STATE,
-        "nodes": results
+        "nodes": results,
+        "history": aggregated_history
     }
+    
 
 @app.get("/api/blocking/status")
 def get_blocking_status(request: Request):
