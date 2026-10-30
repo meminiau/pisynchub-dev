@@ -11,10 +11,17 @@ async function handleResponse<T>(res: Response): Promise<T> {
     let errMessage = `HTTP error ${res.status}`;
     try {
       const data = await res.json();
-      if (data.detail) errMessage = data.detail;
-      else if (data.message) errMessage = data.message;
+      if (typeof data.detail === 'string') {
+        errMessage = data.detail;
+      } else if (Array.isArray(data.detail)) {
+        // Formats FastAPI validation error lists into readable text
+        errMessage = data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ');
+      } else if (data.message && typeof data.message === 'string') {
+        errMessage = data.message;
+      } else if (data.detail && typeof data.detail === 'object') {
+        errMessage = JSON.stringify(data.detail);
+      }
     } catch {
-      // Fallback to text if response is not JSON
       const text = await res.text();
       if (text) errMessage = text;
     }
@@ -74,8 +81,7 @@ export const api = {
     });
     return handleResponse(res);
   },
-
-  // Telemetry & Dashboard Stats
+    // Telemetry & Dashboard Stats
   async getDashboardStats(): Promise<DashboardStats> {
     const res = await fetch('/api/dashboard/stats');
     return handleResponse(res);
