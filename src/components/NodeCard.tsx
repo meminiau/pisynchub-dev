@@ -1,5 +1,5 @@
-import React from 'react';
-import { Settings, ExternalLink, Download, Trash2, Cpu, Activity, ShieldCheck, Database } from 'lucide-react';
+import React, { useState } from 'react';
+import { Settings, ExternalLink, Download, Trash2, Cpu, Activity, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { PiholeNode } from '../types';
 
 interface NodeCardProps {
@@ -17,6 +17,7 @@ export const NodeCard: React.FC<NodeCardProps> = ({
   onBackupNode,
   onDeleteNode,
 }) => {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const adminUrl = `${node.url.replace(/\/$/, '')}/admin`;
 
   return (
@@ -99,8 +100,7 @@ export const NodeCard: React.FC<NodeCardProps> = ({
           </div>
         </div>
       </div>
-
-      {/* Card Actions Footer with primary Manage Node button */}
+            {/* Card Actions Footer with Confirmation Safeguard */}
       <div className="flex items-center justify-between gap-2 border-t border-[var(--border-subtle)] pt-3">
         {/* Primary In-App Manage Node Button */}
         <button
@@ -123,14 +123,37 @@ export const NodeCard: React.FC<NodeCardProps> = ({
             <span className="hidden sm:inline">Backup</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => onDeleteNode(index, node.name)}
-            className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] p-1.5 text-[var(--text-muted)] transition-colors hover:bg-rose-500/15 hover:text-[var(--accent-red)]"
-            title="Remove node from cluster"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          {confirmingDelete ? (
+            <div className="flex items-center gap-1 rounded-md border border-[var(--accent-red)]/40 bg-rose-500/10 p-1">
+              <span className="px-1 text-[11px] font-bold text-[var(--accent-red)]">Delete?</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  onDeleteNode(index, node.name);
+                }}
+                className="rounded bg-[var(--accent-red)] px-2 py-0.5 text-[10px] font-bold text-white hover:opacity-90"
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(false)}
+                className="rounded border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-strong)] hover:bg-[var(--card-hover)]"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(true)}
+              className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] p-1.5 text-[var(--text-muted)] transition-colors hover:bg-rose-500/15 hover:text-[var(--accent-red)]"
+              title="Remove node from cluster"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
     </div>
