@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Profile>
+<Repository>
   <Name>MeminiAU PiSyncHub</Name>
   <Author>MeminiAU</Author>
+  <Profile>https://forums.unraid.net/</Profile>
   <Description>PiSyncHub : Pi-hole V6 Dashboard &amp; Synchronization for multiple Pi-hole instances.</Description>
   <Support>https://github.com/meminiau/pisynchub-dev/issues</Support>
   <Project>https://github.com/meminiau/pisynchub-dev</Project>
   <Icon>https://raw.githubusercontent.com/meminiau/pisynchub-dev/main/icon.png</Icon>
-</Profile>
+</Repository>
