@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Repository>
+<Profile>
   <Name>MeminiAU PiSyncHub</Name>
   <Author>MeminiAU</Author>
-  <Description>PiSyncHub : Pi-hole V6 Dashboard & Synchronization for multiple Pi-hole instances. </Description>
+  <Description>PiSyncHub : Pi-hole V6 Dashboard &amp; Synchronization for multiple Pi-hole instances.</Description>
   <Support>https://github.com/meminiau/pisynchub-dev/issues</Support>
   <Project>https://github.com/meminiau/pisynchub-dev</Project>
   <Icon>https://raw.githubusercontent.com/meminiau/pisynchub-dev/main/icon.png</Icon>
-</Repository>
+</Profile>
